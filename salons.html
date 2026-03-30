@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Salons — Loup-Garou</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body style="position: relative">
+    <div class="notif" id="notif"></div>
+
+    <div class="hero" style="min-height: 22vh">
+      <div>
+        <h1>🏰 Tous les Salons</h1>
+        <p style="font-size: 0.95rem">
+          Rejoignez une partie en cours ou créez la vôtre !
+        </p>
+      </div>
+    </div>
+
+    <div style="max-width: 900px; margin: 0 auto; padding: 1rem">
+      <button
+        class="btn secondary"
+        style="margin-bottom: 1.2rem; padding: 0.5rem 1rem; font-size: 0.85rem"
+        onclick="window.location.href='accueil.html'"
+      >
+        ← Retour
+      </button>
+
+      <div id="salons-list">
+        <p
+          style="
+            color: #555;
+            font-style: italic;
+            text-align: center;
+            padding: 2rem;
+          "
+        >
+          Chargement...
+        </p>
+      </div>
+    </div>
+
+    <footer>© 2025 – Loup-Garou en Ligne</footer>
+
+    <script type="module">
+      import {
+        db,
+        auth,
+        ref,
+        onValue,
+        get,
+        set,
+        onAuthStateChanged,
+      } from "./firebase.js";
+
+      const SK = "lg_session_v2";
+      const sess = localStorage.getItem(SK);
+      if (!sess) {
+        window.location.href = "connexion.html";
+      }
+      const me = JSON.parse(sess);
+
+      // 🔒 Attendre Firebase Auth avant toute lecture DB
+      onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          localStorage.removeItem(SK);
+          window.location.href = "connexion.html";
+          return;
+        }
+        _initSalons();
+      });
+
+      function _initSalons() {
+        onValue(ref(db, "salons"), (snap) => {
+          const salons = snap.exists() ? snap.val() : {};
+          const list = Object.values(salons)
+            .filter((s) => s.status === "waiting")
+            .sort((a, b) => (b.created || 0) - (a.created || 0));
+
+          const c = document.getElementById("salons-list");
+          if (!list.length) {
+            c.innerHTML =
+              '<p style="color:#555;font-style:italic;text-align:center;padding:2rem">Aucun salon actif pour le moment.</p>';
+            return;
+          }
+          c.innerHTML = list
+            .map(
+              (s) => `
+          <div class="card" style="margin-bottom:0.5rem;padding:0.8rem 1rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <div>
+                <div style="font-weight:600;color:var(--highlight);font-size:1rem">${s.name}</div>
+                <div style="font-size:0.75rem;color:#666;margin-top:2px">
+                  Hôte : ${s.hostName} · ${s.players.length}/${s.max} joueurs · Code : <strong style="color:var(--accent)">${s.code}</strong>
+                </div>
+              </div>
+              <button class="btn secondary" style="font-size:0.85rem;padding:0.5rem 1.2rem" onclick="joinSalon('${s.id}')">Rejoindre</button>
+            </div>
+          </div>`
+            )
+            .join("");
+        });
+
+        window.joinSalon = async function (id) {
+          const snap = await get(ref(db, "salons/" + id));
+          if (!snap.exists()) {
+            showNotif("Salon introuvable.");
+            return;
+          }
+          const salon = snap.val();
+          if (salon.status !== "waiting") {
+            showNotif("Partie déjà commencée.");
+            return;
+          }
+          if (salon.players.length >= salon.max) {
+            showNotif("Salon plein !");
+            return;
+          }
+          if (!salon.players.find((p) => p.id === me.id)) {
+            salon.players.push({ id: me.id, name: me.name, ready: true });
+            await set(ref(db, "salons/" + id), salon);
+          }
+          localStorage.setItem("lg_current_salon", id);
+          localStorage.setItem("lg_is_host", "false");
+          window.location.href = "lobby.html";
+        };
+
+        function showNotif(msg) {
+          const n = document.getElementById("notif");
+          n.textContent = msg;
+          n.style.display = "block";
+          setTimeout(() => (n.style.display = "none"), 3000);
+        }
+      } // fin _initSalons
+    </script>
+  </body>
+</html>

@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Réinitialisation — Les Loups Garous d'Hurlebois</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(201, 164, 76, 0.3);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        vertical-align: middle;
+        margin-right: 6px;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .pwd-wrap {
+        position: relative;
+      }
+      .pwd-wrap input {
+        padding-right: 2.5rem;
+      }
+      .pwd-eye {
+        position: absolute;
+        right: 0.7rem;
+        top: 50%;
+        transform: translateY(-50%);
+        background: none;
+        border: none;
+        color: #666;
+        cursor: pointer;
+        font-size: 1rem;
+        padding: 0;
+        line-height: 1;
+      }
+      .pwd-eye:hover {
+        color: var(--accent);
+      }
+      .strength-bar {
+        height: 4px;
+        border-radius: 4px;
+        margin: -8px 0 10px;
+        background: #1a1f2e;
+        overflow: hidden;
+        transition: 0.3s;
+      }
+      .strength-fill {
+        height: 100%;
+        border-radius: 4px;
+        width: 0%;
+        transition: width 0.3s, background 0.3s;
+      }
+      .strength-label {
+        font-size: 0.68rem;
+        margin: -6px 0 10px;
+        text-align: right;
+        min-height: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="notif" id="notif"></div>
+
+    <div class="login-page">
+      <div class="login-box">
+        <h1 style="font-size: 2.8rem; margin-bottom: 0.3rem">
+          Les Loups Garous d'Hurlebois
+        </h1>
+        <p
+          style="
+            color: #888;
+            font-style: italic;
+            font-size: 0.9rem;
+            margin-bottom: 1.8rem;
+          "
+        >
+          Le village Maudit
+        </p>
+
+        <div id="state-loading" style="padding: 1.5rem 0; text-align: center">
+          <div
+            class="spinner"
+            style="
+              width: 28px;
+              height: 28px;
+              margin: 0 auto 1rem;
+              display: block;
+            "
+          ></div>
+          <p style="color: #666; font-size: 0.85rem">Vérification du lien…</p>
+        </div>
+
+        <!-- Formulaire réinitialisation -->
+        <div id="state-form" style="display: none">
+          <p
+            style="
+              font-size: 0.82rem;
+              color: #aaa;
+              margin-bottom: 1.2rem;
+              line-height: 1.5;
+              text-align: center;
+            "
+          >
+            Choisissez un nouveau mot de passe pour votre compte.
+          </p>
+          <div class="error-msg" id="err"></div>
+          <div class="success-msg" id="succ"></div>
+
+          <div class="pwd-wrap">
+            <input
+              type="password"
+              id="p1"
+              placeholder="Nouveau mot de passe"
+              oninput="checkStrength()"
+              autocomplete="new-password"
+            />
+            <button
+              class="pwd-eye"
+              onclick="togglePwd('p1',this)"
+              tabindex="-1"
+            >
+              👁
+            </button>
+          </div>
+          <div class="strength-bar">
+            <div class="strength-fill" id="str-fill"></div>
+          </div>
+          <div class="strength-label" id="str-label"></div>
+
+          <div class="pwd-wrap">
+            <input
+              type="password"
+              id="p2"
+              placeholder="Confirmer le mot de passe"
+              oninput="checkMatch()"
+              autocomplete="new-password"
+            />
+            <button
+              class="pwd-eye"
+              onclick="togglePwd('p2',this)"
+              tabindex="-1"
+            >
+              👁
+            </button>
+          </div>
+          <div
+            class="strength-label"
+            id="match-label"
+            style="text-align: left; margin-top: -8px; margin-bottom: 10px"
+          ></div>
+
+          <button class="btn full" id="btn-reset" onclick="doReset()">
+            Changer mon mot de passe
+          </button>
+        </div>
+
+        <!-- Succès -->
+        <div
+          id="state-success"
+          style="display: none; text-align: center; padding: 1rem 0"
+        >
+          <div style="font-size: 3.5rem; margin-bottom: 1rem">🎉</div>
+          <div
+            style="
+              font-family: 'Cinzel', serif;
+              color: var(--accent);
+              font-size: 1.2rem;
+              margin-bottom: 0.8rem;
+            "
+          >
+            Mot de passe changé !
+          </div>
+          <p
+            style="
+              font-size: 0.85rem;
+              color: #aaa;
+              line-height: 1.6;
+              margin-bottom: 1.4rem;
+            "
+          >
+            Votre mot de passe a été réinitialisé avec succès.<br />
+            Vous pouvez maintenant vous connecter.
+          </p>
+          <a href="connexion.html" class="btn full" style="display: block">
+            Se connecter →
+          </a>
+        </div>
+
+        <!-- Lien invalide / expiré -->
+        <div
+          id="state-invalid"
+          style="display: none; text-align: center; padding: 1rem 0"
+        >
+          <div style="font-size: 3rem; margin-bottom: 1rem">⚠️</div>
+          <div
+            style="
+              font-family: 'Cinzel', serif;
+              color: #be6d6d;
+              font-size: 1rem;
+              margin-bottom: 0.8rem;
+            "
+          >
+            Lien invalide ou expiré
+          </div>
+          <p
+            style="
+              font-size: 0.82rem;
+              color: #aaa;
+              line-height: 1.6;
+              margin-bottom: 1.4rem;
+            "
+          >
+            Ce lien de réinitialisation n'est plus valide.<br />
+            Faites une nouvelle demande depuis la page de connexion.
+          </p>
+          <a
+            href="connexion.html"
+            class="btn secondary full"
+            style="display: block"
+          >
+            ← Retour à la connexion
+          </a>
+        </div>
+
+        <p style="font-size: 0.7rem; color: #333; margin-top: 1.5rem">
+          🔒 Connexion sécurisée par Firebase Auth
+        </p>
+      </div>
+    </div>
+
+    <script type="module">
+      import { auth } from "./firebase.js";
+
+      import {
+        confirmPasswordReset,
+        verifyPasswordResetCode,
+      } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+
+      // Récupère le code oobCode dans l'URL
+      const params = new URLSearchParams(window.location.search);
+      const oobCode = params.get("oobCode");
+
+      function show(stateId) {
+        [
+          "state-loading",
+          "state-form",
+          "state-success",
+          "state-invalid",
+        ].forEach((id) => {
+          document.getElementById(id).style.display =
+            id === stateId ? "block" : "none";
+        });
+      }
+
+      // Vérifie que le code est valide
+      if (!oobCode) {
+        show("state-invalid");
+      } else {
+        verifyPasswordResetCode(auth, oobCode)
+          .then(() => show("state-form"))
+          .catch(() => show("state-invalid"));
+      }
+
+      // Toggle visibilité mot de passe
+      window.togglePwd = function (id, btn) {
+        const inp = document.getElementById(id);
+        inp.type = inp.type === "password" ? "text" : "password";
+        btn.textContent = inp.type === "password" ? "👁" : "🙈";
+      };
+
+      // Barre de force du mot de passe
+      window.checkStrength = function () {
+        const v = document.getElementById("p1").value;
+        const fill = document.getElementById("str-fill");
+        const label = document.getElementById("str-label");
+        let score = 0;
+        if (v.length >= 6) score++;
+        if (v.length >= 10) score++;
+        if (/[A-Z]/.test(v)) score++;
+        if (/[0-9]/.test(v)) score++;
+        if (/[^A-Za-z0-9]/.test(v)) score++;
+
+        const levels = [
+          { pct: 0, color: "#333", txt: "" },
+          { pct: 20, color: "#be4444", txt: "Très faible" },
+          { pct: 40, color: "#be7c44", txt: "Faible" },
+          { pct: 60, color: "#c9a44c", txt: "Moyen" },
+          { pct: 80, color: "#6dbe6d", txt: "Fort" },
+          { pct: 100, color: "#44be9a", txt: "Très fort" },
+        ];
+        const l = levels[score] || levels[0];
+        fill.style.width = l.pct + "%";
+        fill.style.background = l.color;
+        label.textContent = l.txt;
+        label.style.color = l.color;
+        checkMatch();
+      };
+
+      // Vérification correspondance
+      window.checkMatch = function () {
+        const p1 = document.getElementById("p1").value;
+        const p2 = document.getElementById("p2").value;
+        const lbl = document.getElementById("match-label");
+        if (!p2) {
+          lbl.textContent = "";
+          return;
+        }
+        if (p1 === p2) {
+          lbl.textContent = "✓ Les mots de passe correspondent";
+          lbl.style.color = "#6dbe6d";
+        } else {
+          lbl.textContent = "✗ Les mots de passe ne correspondent pas";
+          lbl.style.color = "#be6d6d";
+        }
+      };
+
+      // Réinitialisation
+      window.doReset = async function () {
+        const p1 = document.getElementById("p1").value;
+        const p2 = document.getElementById("p2").value;
+        const err = document.getElementById("err");
+        err.textContent = "";
+
+        if (!p1 || !p2) {
+          err.textContent = "Remplissez les deux champs.";
+          return;
+        }
+        if (p1.length < 6) {
+          err.textContent = "Mot de passe trop court (min. 6 caractères).";
+          return;
+        }
+        if (p1 !== p2) {
+          err.textContent = "Les mots de passe ne correspondent pas.";
+          return;
+        }
+
+        const btn = document.getElementById("btn-reset");
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>Modification…';
+
+        try {
+          await confirmPasswordReset(auth, oobCode, p1);
+          show("state-success");
+        } catch (e) {
+          btn.disabled = false;
+          btn.textContent = "Changer mon mot de passe";
+          const msgs = {
+            "auth/expired-action-code":
+              "Le lien a expiré. Faites une nouvelle demande.",
+            "auth/invalid-action-code": "Lien invalide ou déjà utilisé.",
+            "auth/weak-password":
+              "Mot de passe trop faible (min. 6 caractères).",
+          };
+          err.textContent =
+            msgs[e.code] || "Erreur : " + (e.code || "inconnue");
+        }
+      };
+    </script>
+  </body>
+</html>
