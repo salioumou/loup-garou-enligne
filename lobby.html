@@ -1,0 +1,1800 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lobby — Loup-Garou</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      /* ── Emoji picker ── */
+      .emoji-btn {
+        background: none;
+        border: none;
+        font-size: 1.1rem;
+        cursor: pointer;
+        padding: 0 6px;
+        line-height: 1;
+        opacity: 0.7;
+        transition: opacity 0.15s;
+        flex-shrink: 0;
+      }
+      .emoji-btn:hover {
+        opacity: 1;
+      }
+      .emoji-picker {
+        position: absolute;
+        bottom: 48px;
+        left: 0;
+        right: 0;
+        background: #10131c;
+        border: 1px solid #252d3a;
+        border-radius: 12px;
+        padding: 8px;
+        display: none;
+        flex-wrap: wrap;
+        gap: 2px;
+        z-index: 20;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+      }
+      .emoji-picker.open {
+        display: flex;
+      }
+      .ep-emoji {
+        font-size: 1.25rem;
+        cursor: pointer;
+        padding: 4px 5px;
+        border-radius: 6px;
+        transition: background 0.1s;
+        line-height: 1;
+      }
+      .ep-emoji:hover {
+        background: #1e2535;
+      }
+
+      /* ── Indicateurs en ligne ── */
+      .online-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        display: inline-block;
+      }
+      .dot-online {
+        background: #6dbe6d;
+        box-shadow: 0 0 5px #6dbe6d;
+      }
+      .dot-offline {
+        background: #444;
+      }
+
+      /* ── Notification toast de nouveau message ── */
+      .chat-notif {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #1a1200;
+        border: 1px solid var(--accent);
+        border-radius: 12px;
+        padding: 10px 16px;
+        font-size: 0.82rem;
+        color: var(--highlight);
+        z-index: 100;
+        display: none;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        animation: slideIn 0.25s ease;
+        max-width: 280px;
+      }
+      .chat-notif.show {
+        display: flex;
+      }
+      @keyframes slideIn {
+        from {
+          transform: translateY(20px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+      .chat-notif-close {
+        background: none;
+        border: none;
+        color: #666;
+        cursor: pointer;
+        font-size: 1rem;
+        margin-left: auto;
+        padding: 0;
+      }
+
+      /* ── Compteur non-lus sur le titre du chat ── */
+      .unread-badge {
+        display: inline-block;
+        background: #be4444;
+        color: #fff;
+        border-radius: 10px;
+        padding: 1px 7px;
+        font-size: 0.68rem;
+        font-weight: 700;
+        margin-left: 6px;
+        vertical-align: middle;
+      }
+
+      /* ── Chat row avec position relative pour le picker ── */
+      .chat-row-wrap {
+        position: relative;
+      }
+      .chat-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .chat-row input {
+        flex: 1;
+        margin-bottom: 0;
+      }
+
+      /* ── Message avec heure ── */
+      .msg .msg-time {
+        font-size: 0.6rem;
+        color: #444;
+        float: right;
+        margin-left: 6px;
+        margin-top: 2px;
+      }
+      .msg .who {
+        font-weight: 600;
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body style="position: relative">
+    <div class="notif" id="notif"></div>
+
+    <!-- Toast nouveau message (visible quand le chat est hors écran) -->
+    <div class="chat-notif" id="chat-notif">
+      <span id="chat-notif-text">💬 Nouveau message</span>
+      <button class="chat-notif-close" onclick="dismissChatNotif()">✕</button>
+    </div>
+
+    <div class="hero" style="min-height: 25vh">
+      <div>
+        <h1 id="lobby-title">Chargement...</h1>
+        <p style="font-size: 1rem">
+          Code :
+          <strong
+            id="lobby-code"
+            style="
+              color: var(--accent);
+              letter-spacing: 3px;
+              font-style: normal;
+            "
+          ></strong>
+        </p>
+      </div>
+    </div>
+
+    <div style="max-width: 1000px; margin: 2rem auto; padding: 0 1rem">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="label">Joueurs</div>
+          <div class="value">
+            <span id="lby-cnt">1</span>/<span id="lby-max">10</span>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Statut</div>
+          <div
+            class="value"
+            id="lby-status"
+            style="font-size: 1rem; color: #6dbe6d"
+          >
+            En attente
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Hôte</div>
+          <div class="value" id="lby-host" style="font-size: 1rem">—</div>
+        </div>
+      </div>
+
+      <!-- LIGNE HAUTE : joueurs + chat -->
+      <div
+        style="
+          display: flex;
+          flex-wrap: wrap;
+          gap: 1.5rem;
+          margin-bottom: 1.5rem;
+        "
+      >
+        <!-- Colonne joueurs -->
+        <div style="flex: 1; min-width: 260px">
+          <div class="card">
+            <h3 style="margin-bottom: 1rem">
+              👥 Joueurs connectés
+              <span
+                id="online-badge"
+                style="
+                  font-size: 0.72rem;
+                  color: #6dbe6d;
+                  font-weight: 400;
+                  margin-left: 8px;
+                "
+              ></span>
+            </h3>
+            <!-- Bannière hôte absent (visible uniquement aux autres joueurs) -->
+            <div
+              id="host-absent-banner"
+              style="
+                display: none;
+                background: #1a0a00;
+                border: 1px solid #c9a44c;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 0.8rem;
+                color: #c9a44c;
+                margin-bottom: 8px;
+                line-height: 1.5;
+              "
+            ></div>
+
+            <div
+              id="players-list"
+              style="max-height: 220px; overflow-y: auto"
+            ></div>
+          </div>
+          <button
+            class="btn secondary full"
+            style="margin-top: 0.5rem"
+            onclick="leaveLobby()"
+          >
+            ← Quitter le salon
+          </button>
+          <button
+            class="btn secondary full"
+            style="margin-top: 0.5rem"
+            onclick="window.location.href='accueil.html'"
+          >
+            ← Retour à l'accueil
+          </button>
+        </div>
+
+        <!-- Colonne chat -->
+        <div style="flex: 1; min-width: 260px">
+          <div class="card">
+            <h3 style="margin-bottom: 0.75rem">
+              💬 Chat du salon
+              <span id="unread-count"></span>
+            </h3>
+            <!-- Indicateur "en train d'écrire" -->
+            <div
+              id="typing-indicator"
+              style="
+                font-size: 0.72rem;
+                color: #888;
+                font-style: italic;
+                min-height: 16px;
+                margin-bottom: 4px;
+              "
+            ></div>
+            <div class="chat-box" id="lobby-chat"></div>
+            <div class="chat-row-wrap">
+              <!-- Picker emojis -->
+              <div class="emoji-picker" id="emoji-picker">
+                <!-- Emojis populaires -->
+                <span class="ep-emoji" onclick="insertEmoji('😂')">😂</span>
+                <span class="ep-emoji" onclick="insertEmoji('😊')">😊</span>
+                <span class="ep-emoji" onclick="insertEmoji('🤔')">🤔</span>
+                <span class="ep-emoji" onclick="insertEmoji('😱')">😱</span>
+                <span class="ep-emoji" onclick="insertEmoji('😈')">😈</span>
+                <span class="ep-emoji" onclick="insertEmoji('🐺')">🐺</span>
+                <span class="ep-emoji" onclick="insertEmoji('🌙')">🌙</span>
+                <span class="ep-emoji" onclick="insertEmoji('☀️')">☀️</span>
+                <span class="ep-emoji" onclick="insertEmoji('🗡️')">🗡️</span>
+                <span class="ep-emoji" onclick="insertEmoji('🧙')">🧙</span>
+                <span class="ep-emoji" onclick="insertEmoji('👁️')">👁️</span>
+                <span class="ep-emoji" onclick="insertEmoji('💀')">💀</span>
+                <span class="ep-emoji" onclick="insertEmoji('❤️')">❤️</span>
+                <span class="ep-emoji" onclick="insertEmoji('👍')">👍</span>
+                <span class="ep-emoji" onclick="insertEmoji('👎')">👎</span>
+                <span class="ep-emoji" onclick="insertEmoji('🤫')">🤫</span>
+                <span class="ep-emoji" onclick="insertEmoji('🎭')">🎭</span>
+                <span class="ep-emoji" onclick="insertEmoji('🏹')">🏹</span>
+                <span class="ep-emoji" onclick="insertEmoji('🔮')">🔮</span>
+                <span class="ep-emoji" onclick="insertEmoji('⚗️')">⚗️</span>
+                <span class="ep-emoji" onclick="insertEmoji('🛡️')">🛡️</span>
+                <span class="ep-emoji" onclick="insertEmoji('🔥')">🔥</span>
+                <span class="ep-emoji" onclick="insertEmoji('💬')">💬</span>
+                <span class="ep-emoji" onclick="insertEmoji('🎯')">🎯</span>
+              </div>
+              <div class="chat-row">
+                <button
+                  class="emoji-btn"
+                  id="emoji-toggle"
+                  onclick="toggleEmojiPicker()"
+                  title="Emojis"
+                >
+                  😊
+                </button>
+                <input
+                  type="text"
+                  id="chat-inp"
+                  placeholder="Message..."
+                  onkeydown="if(event.key==='Enter')sendChat()"
+                  oninput="onTyping()"
+                  maxlength="300"
+                />
+                <button
+                  class="btn"
+                  style="padding: 0.6rem 1rem"
+                  onclick="sendChat()"
+                >
+                  ↗
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LIGNE BASSE : configuration pleine largeur -->
+      <div id="host-panel" style="display: none">
+        <div class="card" style="border-color: #664400">
+          <h3 style="color: var(--accent); margin-bottom: 0.5rem">
+            🃏 Configuration des rôles
+          </h3>
+          <p
+            style="
+              font-size: 0.78rem;
+              color: #888;
+              margin-bottom: 1rem;
+              font-style: italic;
+            "
+          >
+            Utilisez + et − pour ajuster le nombre de chaque rôle :
+          </p>
+          <div
+            id="roles-config"
+            style="
+              display: grid;
+              grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+              gap: 0.8rem;
+            "
+          ></div>
+          <div
+            style="
+              margin-top: 0.75rem;
+              padding: 10px;
+              background: #10131c;
+              border-radius: 10px;
+              font-size: 0.82rem;
+            "
+          >
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 4px;
+              "
+            >
+              <span style="color: #888">Total cartes :</span>
+              <span
+                id="total-cards"
+                style="color: var(--accent); font-weight: 600"
+                >0</span
+              >
+            </div>
+            <div style="display: flex; justify-content: space-between">
+              <span style="color: #888">Joueurs dans le salon :</span>
+              <span id="total-players" style="color: #6dbe6d; font-weight: 600"
+                >1</span
+              >
+            </div>
+            <div
+              id="balance-hint"
+              style="
+                display: none;
+                margin-top: 8px;
+                padding: 6px 8px;
+                border-radius: 8px;
+                background: #1a0a0a;
+                border: 1px solid #3a1a1a;
+                font-size: 0.78rem;
+                color: #be6d6d;
+                line-height: 1.5;
+              "
+            ></div>
+          </div>
+        </div>
+
+        <div
+          class="card"
+          style="border-color: #2a3a5a; background: #0b0e1a; margin-top: 1rem"
+        >
+          <h3 style="color: #7a9ade; margin-bottom: 0.8rem">
+            ⚙️ Réglages de partie
+          </h3>
+
+          <!-- Durée du débat -->
+          <div style="margin-bottom: 0.9rem">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 4px;
+              "
+            >
+              <label style="font-size: 0.82rem; color: #aaa"
+                >☀️ Durée du débat</label
+              >
+              <span
+                id="cfg-day-label"
+                style="
+                  font-size: 0.82rem;
+                  color: var(--accent);
+                  font-weight: 600;
+                "
+                >3 min</span
+              >
+            </div>
+            <input
+              type="range"
+              id="cfg-day"
+              min="60"
+              max="300"
+              step="30"
+              value="180"
+              style="width: 100%; accent-color: var(--accent); cursor: pointer"
+              oninput="updateConfig()"
+            />
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                font-size: 0.65rem;
+                color: #444;
+                margin-top: 2px;
+              "
+            >
+              <span>1 min</span><span>3 min</span><span>5 min</span>
+            </div>
+          </div>
+
+          <!-- Durée du vote -->
+          <div style="margin-bottom: 0.9rem">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 4px;
+              "
+            >
+              <label style="font-size: 0.82rem; color: #aaa"
+                >🗳️ Durée du vote</label
+              >
+              <span
+                id="cfg-vote-label"
+                style="
+                  font-size: 0.82rem;
+                  color: var(--accent);
+                  font-weight: 600;
+                "
+                >60 s</span
+              >
+            </div>
+            <input
+              type="range"
+              id="cfg-vote"
+              min="20"
+              max="120"
+              step="10"
+              value="60"
+              style="width: 100%; accent-color: var(--accent); cursor: pointer"
+              oninput="updateConfig()"
+            />
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                font-size: 0.65rem;
+                color: #444;
+                margin-top: 2px;
+              "
+            >
+              <span>20 s</span><span>60 s</span><span>2 min</span>
+            </div>
+          </div>
+
+          <!-- Vote à blanc -->
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            "
+          >
+            <div>
+              <div style="font-size: 0.82rem; color: #aaa">
+                ⬜ Vote blanc autorisé
+              </div>
+              <div style="font-size: 0.68rem; color: #555; margin-top: 2px">
+                Permet de s'abstenir lors du vote
+              </div>
+            </div>
+            <label
+              style="
+                position: relative;
+                display: inline-block;
+                width: 44px;
+                height: 24px;
+                flex-shrink: 0;
+              "
+            >
+              <input
+                type="checkbox"
+                id="cfg-blank"
+                checked
+                onchange="updateConfig()"
+                style="opacity: 0; width: 0; height: 0; position: absolute"
+              />
+              <span
+                id="cfg-blank-track"
+                style="
+                  position: absolute;
+                  inset: 0;
+                  background: #252d3a;
+                  border-radius: 24px;
+                  transition: 0.3s;
+                  cursor: pointer;
+                "
+              ></span>
+              <span
+                id="cfg-blank-thumb"
+                style="
+                  position: absolute;
+                  left: 3px;
+                  top: 3px;
+                  width: 18px;
+                  height: 18px;
+                  background: #aaa;
+                  border-radius: 50%;
+                  transition: 0.3s;
+                  cursor: pointer;
+                "
+              ></span>
+            </label>
+          </div>
+
+          <!-- Bots (remplissage auto) -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.9rem">
+            <div>
+              <div style="font-size:0.82rem;color:#aaa">🤖 Bots (remplissage auto)</div>
+              <div style="font-size:0.68rem;color:#555;margin-top:2px">Désactivez pour jouer uniquement entre humains</div>
+            </div>
+            <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
+              <input type="checkbox" id="cfg-bots" checked onchange="updateConfig()" style="opacity:0;width:0;height:0;position:absolute"/>
+              <span id="cfg-bots-track" style="position:absolute;inset:0;background:#2a5a2a;border-radius:24px;transition:0.3s;cursor:pointer"></span>
+              <span id="cfg-bots-thumb" style="position:absolute;left:23px;top:3px;width:18px;height:18px;background:#6dbe6d;border-radius:50%;transition:0.3s;cursor:pointer"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Vue réglages pour les non-hôtes (lecture seule) -->
+        <div
+          id="guest-config"
+          style="display: none"
+          class="card"
+          style="border-color: #252d3a; margin-top: 1rem"
+        >
+          <h3 style="color: #666; margin-bottom: 0.6rem; font-size: 0.88rem">
+            ⚙️ Réglages de la partie
+          </h3>
+          <div
+            id="guest-config-content"
+            style="
+              font-size: 0.8rem;
+              color: #888;
+              display: flex;
+              gap: 1rem;
+              flex-wrap: wrap;
+            "
+          ></div>
+        </div>
+
+        <div
+          class="card"
+          style="border-color: #3a6a3a; background: #0e1a0e; margin-top: 1rem"
+        >
+          <h3 style="color: #6dbe6d; margin-bottom: 0.5rem">
+            🎮 Vous êtes l'hôte
+          </h3>
+          <p
+            style="font-size: 0.82rem; color: #6dbe6d; margin-bottom: 1rem"
+            id="start-hint"
+          >
+            Il faut au moins 4 joueurs.
+          </p>
+          <button
+            id="btn-adjust"
+            onclick="autoAdjust()"
+            style="
+              display: none;
+              width: 100%;
+              margin-bottom: 0.6rem;
+              padding: 0.6rem;
+              border-radius: 30px;
+              background: #1a2a1a;
+              border: 1px solid #4a8a4a;
+              color: #6dbe6d;
+              font-size: 0.85rem;
+              cursor: pointer;
+              font-family: inherit;
+              font-weight: 600;
+            "
+          >
+            ⚡ Ajuster auto
+          </button>
+          <button
+            class="btn full"
+            id="btn-start"
+            onclick="startGame()"
+            disabled
+          >
+            Lancer la partie
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <footer>© 2025 – Les Loups Garous d'Hurlebois</footer>
+
+    <script type="module">
+      import {
+        initializeApp,
+        getApp,
+      } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+      import {
+        getDatabase,
+        ref,
+        set,
+        get,
+        update,
+        onValue,
+        remove,
+        push,
+      } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+      import {
+        getAuth,
+        onAuthStateChanged,
+      } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyBAAnZP5J_RsTF-puLIkloRT6pyS3TgtAM",
+        authDomain: "loup-garou-en-ligne-32f5b.firebaseapp.com",
+        databaseURL:
+          "https://loup-garou-en-ligne-32f5b-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "loup-garou-en-ligne-32f5b",
+        storageBucket: "loup-garou-en-ligne-32f5b.firebasestorage.app",
+        messagingSenderId: "536792759140",
+        appId: "1:536792759140:web:aefc9cf5e0b271204b9871",
+      };
+      let app;
+      try {
+        app = initializeApp(firebaseConfig);
+      } catch (e) {
+        app = getApp();
+      }
+      const db = getDatabase(app);
+
+      const SESSION_KEY = "lg_session_v2";
+      const session = localStorage.getItem(SESSION_KEY);
+      if (!session) window.location.href = "connexion.html";
+      const me = JSON.parse(session);
+      const salonId = localStorage.getItem("lg_current_salon");
+      const isHost = localStorage.getItem("lg_is_host") === "true";
+      if (!salonId) window.location.href = "accueil.html";
+
+      const BOT_NAMES = [
+        "Alice",
+        "Bob",
+        "Camille",
+        "David",
+        "Élise",
+        "François",
+        "Gaëlle",
+        "Henri",
+        "Inès",
+        "Jules",
+        "Karine",
+        "Laurent",
+        "Marc",
+        "Nina",
+        "Olivier",
+        "Pauline",
+        "Quentin",
+        "Romain",
+        "Sophie",
+        "Thomas",
+        "Ursula",
+        "Victor",
+        "Wendy",
+        "Xavier",
+        "Yasmine",
+        "Zoé",
+        "Axel",
+        "Béatrice",
+        "Cédric",
+        "Delphine",
+      ];
+      let botIdx = 0;
+
+      const ROLES_CONFIG = [
+        {
+          id: "wolf",
+          name: "Loup-Garou",
+          img: "https://i.postimg.cc/d0j3FhmY/IMG-0926.jpg",
+          min: 1,
+          max: 8,
+          default: 2,
+        },
+        {
+          id: "grandmechant",
+          name: "G. Méchant Loup",
+          img: "https://i.postimg.cc/6QfqK8Lp/IMG-0924.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "whitewolf",
+          name: "Loup Blanc",
+          img: "https://i.postimg.cc/257yY1Fj/IMG-0925.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "villager",
+          name: "Villageois",
+          img: "https://i.postimg.cc/MGmHwnbz/IMG-0927.jpg",
+          min: 1,
+          max: 20,
+          default: 4,
+        },
+        {
+          id: "seer",
+          name: "Voyante",
+          img: "https://i.postimg.cc/MGmHwn0g/IMG-0931.jpg",
+          min: 0,
+          max: 2,
+          default: 1,
+        },
+        {
+          id: "voyantebavarde",
+          name: "Voyante Bavarde",
+          img: "https://i.postimg.cc/nLGrxXKW/IMG-0934.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "witch",
+          name: "Sorcière",
+          img: "https://i.postimg.cc/T34FwxGW/carte-sorciere.jpg",
+          min: 0,
+          max: 2,
+          default: 1,
+        },
+        {
+          id: "hunter",
+          name: "Chasseur",
+          img: "https://i.postimg.cc/fLWLRMBs/IMG-0921.jpg",
+          min: 0,
+          max: 2,
+          default: 1,
+        },
+        {
+          id: "savior",
+          name: "Salvateur",
+          img: "https://i.postimg.cc/RFCFZvXx/IMG-0922.jpg",
+          min: 0,
+          max: 2,
+          default: 1,
+        },
+        {
+          id: "ancien",
+          name: "L'Ancien",
+          img: "https://i.postimg.cc/q7xqrNcS/IMG-0932.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "corbeau",
+          name: "Corbeau",
+          img: "https://i.postimg.cc/434yJzfx/carte-corbeau.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "montreurdours",
+          name: "Montreur d'Ours",
+          img: "https://i.postimg.cc/d0j3FhRX/IMG-0933.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "littlegirl",
+          name: "Petite Fille",
+          img: "https://i.postimg.cc/CKs50RC3/IMG-0930.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "idiot",
+          name: "Idiot du Village",
+          img: "https://i.postimg.cc/wvxvj90d/IMG-0919.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "cupid",
+          name: "Cupidon",
+          img: "https://i.postimg.cc/W4wzVd6j/IMG-0929.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "thief",
+          name: "Voleur",
+          img: "https://i.postimg.cc/V6s6kzD8/IMG-0920.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "angel",
+          name: "Ange",
+          img: "https://i.postimg.cc/k4bm94bx/carte-ange.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "enfantsauvage",
+          name: "Enfant Sauvage",
+          img: "https://i.postimg.cc/VmHRVD7T/carte-lenfantsauvage.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "joueurdeflute",
+          name: "Joueur de Flûte",
+          img: "https://i.postimg.cc/yNyxKDhr/IMG-0935.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "boucemissaire",
+          name: "Bouc-émissaire",
+          img: "https://i.postimg.cc/pL4SmdmH/boucetemissaire.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+        {
+          id: "chienloup",
+          name: "Chien-Loup",
+          img: "https://i.postimg.cc/wj7PxNTS/chien%20loup.jpg",
+          min: 0,
+          max: 1,
+          default: 0,
+        },
+      ];
+      let rolesCount = {};
+      ROLES_CONFIG.forEach((r) => (rolesCount[r.id] = r.default));
+
+      // 🔒 Attendre Firebase Auth avant toute lecture DB
+      const auth = getAuth(app);
+      onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          localStorage.removeItem(SESSION_KEY);
+          window.location.href = "connexion.html";
+          return;
+        }
+        _initLobby();
+      });
+
+      function _initLobby() {
+
+      const salonRef = ref(db, "salons/" + salonId);
+      let initialized = false;
+      let chatCount = 0;
+      let unreadCount = 0;
+      let chatVisible = true; // le chat est-il dans le viewport ?
+      let typingTimer = null;
+      let lastTypingAuthors = [];
+
+      // ── Présence en ligne ─────────────────────────────────────────────────
+      const presenceRef = ref(db, "lobbyPresence/" + salonId + "/" + me.id);
+      set(presenceRef, { name: me.name, ts: Date.now() });
+      setInterval(
+        () => set(presenceRef, { name: me.name, ts: Date.now() }),
+        20000
+      );
+
+      // ── Heartbeat hôte ────────────────────────────────────────────────────
+      // L'hôte met à jour hostLastSeen toutes les 30s.
+      // Si absent > 3 min → le salon est marqué "hostAbsent" et affiché en attente.
+      // Dès que l'hôte revient, tout reprend normalement. Aucune suppression brutale.
+      const HOST_ABSENT_MS = 3 * 60 * 1000; // 3 minutes avant d'afficher alerte
+      const HOST_DELETE_MS = 10 * 60 * 1000; // 10 minutes avant suppression définitive
+
+      if (isHost) {
+        // Écrire le heartbeat immédiatement puis toutes les 30s
+        const sendHeartbeat = () =>
+          update(salonRef, { hostLastSeen: Date.now(), hostAbsent: false });
+        sendHeartbeat();
+        setInterval(sendHeartbeat, 30000);
+      } else {
+        // Les autres joueurs surveillent le heartbeat de l'hôte
+        const _checkHostPresence = setInterval(async () => {
+          const snap = await get(salonRef);
+          if (!snap.exists()) return;
+          const salon = snap.val();
+          if (!salon.hostLastSeen) return;
+
+          const absent = Date.now() - salon.hostLastSeen;
+          const banner = document.getElementById("host-absent-banner");
+
+          if (absent > HOST_DELETE_MS) {
+            // 10 min sans signe de vie → supprimer le salon
+            clearInterval(_checkHostPresence);
+            await remove(salonRef);
+            showNotif(
+              "L'hôte est absent depuis trop longtemps. Salon supprimé."
+            );
+            setTimeout(() => {
+              window.location.href = "accueil.html";
+            }, 2500);
+          } else if (absent > HOST_ABSENT_MS) {
+            // 3 min → afficher une bannière d'avertissement
+            if (banner) {
+              const mins = Math.floor(absent / 60000);
+              banner.style.display = "block";
+              banner.textContent =
+                "⚠️ L'hôte semble déconnecté depuis " +
+                mins +
+                " min. Le salon sera supprimé dans " +
+                Math.round((HOST_DELETE_MS - absent) / 60000) +
+                " min s'il ne revient pas.";
+            }
+          } else {
+            // Hôte présent → cacher la bannière
+            if (banner) banner.style.display = "none";
+          }
+        }, 30000);
+      }
+
+      // Surveiller hostAbsent pour afficher/cacher la bannière
+      onValue(ref(db, "salons/" + salonId + "/hostAbsent"), (snap) => {
+        const banner = document.getElementById("host-absent-banner");
+        if (banner) banner.style.display = "none"; // hôte revenu
+      });
+
+      // ── Écoute salon ──────────────────────────────────────────────────────
+      let _prevHost = null;
+      onValue(salonRef, (snap) => {
+        if (!snap.exists()) {
+          window.location.href = "accueil.html";
+          return;
+        }
+        const salon = snap.val();
+        if (salon.status === "started") {
+          window.location.href = "partie.html";
+          return;
+        }
+
+        // Détection transfert d'hôte
+        if (_prevHost && salon.host !== _prevHost && salon.host === me.id) {
+          // Je viens de devenir hôte → recharger pour activer les contrôles
+          localStorage.setItem("lg_is_host", "true");
+          showNotif("🎖️ Vous êtes maintenant l'hôte !");
+          setTimeout(() => window.location.reload(), 1500);
+          return;
+        }
+        _prevHost = salon.host;
+
+        renderPlayers(salon);
+        document.getElementById("lobby-title").textContent = salon.name;
+        document.getElementById("lobby-code").textContent = salon.code;
+        document.getElementById("lby-host").textContent = salon.hostName;
+        document.getElementById("lby-cnt").textContent = salon.players.length;
+        document.getElementById("lby-max").textContent = salon.max;
+        document.getElementById("total-players").textContent =
+          salon.players.length;
+        updateTotalCards(salon.players.length);
+
+        // Afficher les réglages pour tous (lecture seule pour les non-hôtes)
+        if (salon.config) {
+          const cfg = salon.config;
+          if (!isHost) {
+            const guestCfg = document.getElementById("guest-config");
+            const guestContent = document.getElementById(
+              "guest-config-content"
+            );
+            if (guestCfg) guestCfg.style.display = "block";
+            const dayMin = Math.round(cfg.dayDuration / 60);
+            const dayLabel =
+              dayMin >= 1 ? dayMin + " min" : cfg.dayDuration + " s";
+            if (guestContent)
+              guestContent.innerHTML =
+                `<span>☀️ Débat : <strong style="color:var(--accent)">${dayLabel}</strong></span>` +
+                `<span>🗳️ Vote : <strong style="color:var(--accent)">${cfg.voteDuration} s</strong></span>` +
+                `<span>⬜ Vote blanc : <strong style="color:${
+                  cfg.allowBlank ? "#6dbe6d" : "#be6d6d"
+                }">${cfg.allowBlank ? "Oui" : "Non"}</strong></span>` +
+                  `<span>🤖 Bots : <strong style="color:${cfg.allowBots !== false ? "#6dbe6d" : "#be6d6d"}">${cfg.allowBots !== false ? "Oui" : "Non"}</strong></span>`;
+          } else {
+            // Sync les sliders avec Firebase si un autre onglet les a modifiés
+            const daySlider = document.getElementById("cfg-day");
+            const voteSlider = document.getElementById("cfg-vote");
+            const blankCheck = document.getElementById("cfg-blank");
+            if (daySlider && !daySlider.matches(":active")) {
+              daySlider.value = cfg.dayDuration;
+              updateConfigLabels();
+            }
+            if (voteSlider && !voteSlider.matches(":active")) {
+              voteSlider.value = cfg.voteDuration;
+              updateConfigLabels();
+            }
+            if (blankCheck) blankCheck.checked = cfg.allowBlank;
+            updateToggleStyle();
+          }
+        }
+
+        if (!initialized) {
+          initialized = true;
+          addChat("Bienvenue dans <strong>" + salon.name + "</strong> !", true);
+          addChat("Code : <strong>" + salon.code + "</strong>", true);
+          if (isHost) {
+            document.getElementById("host-panel").style.display = "block";
+            renderRolesConfig();
+            addBotsGradually(salon);
+            // Écrire la config par défaut si pas encore faite
+            if (!salon.config) saveConfig();
+          } else {
+            // Non-hôte : afficher la zone de réglages en lecture seule
+            const guestCfg = document.getElementById("guest-config");
+            if (guestCfg) guestCfg.style.display = "block";
+          }
+        }
+      });
+
+      // ── Présence : qui est en ligne ───────────────────────────────────────
+      onValue(ref(db, "lobbyPresence/" + salonId), (snap) => {
+        if (!snap.exists()) return;
+        const now = Date.now();
+        const online = Object.values(snap.val()).filter(
+          (p) => now - (p.ts || 0) < 40000
+        );
+        document.getElementById("online-badge").textContent =
+          "● " + online.length + " en ligne";
+      });
+
+      // ── Écoute chat ───────────────────────────────────────────────────────
+      onValue(ref(db, "salons/" + salonId + "/chat"), (snap) => {
+        if (!snap.exists()) return;
+        const msgs = Object.values(snap.val()).sort(
+          (a, b) => (a.t || 0) - (b.t || 0)
+        );
+        const c = document.getElementById("lobby-chat");
+        if (msgs.length > chatCount) {
+          msgs.slice(chatCount).forEach((m) => {
+            const d = document.createElement("div");
+            d.className = "msg" + (m.sys ? " sys" : "");
+            const time = new Date(m.t || Date.now()).toLocaleTimeString(
+              "fr-FR",
+              { hour: "2-digit", minute: "2-digit" }
+            );
+            d.innerHTML = m.sys
+              ? m.text
+              : `<span class="who">${m.author}</span>: ${m.text} <span class="msg-time">${time}</span>`;
+            c.appendChild(d);
+            c.scrollTop = c.scrollHeight;
+
+            // Notification si ce n'est pas notre message et chat hors écran
+            if (!m.sys && m.author !== me.name) {
+              if (!isChatVisible()) {
+                unreadCount++;
+                showChatNotif(m.author, m.text);
+                document.getElementById(
+                  "unread-count"
+                ).innerHTML = `<span class="unread-badge">${unreadCount}</span>`;
+              }
+            }
+          });
+          chatCount = msgs.length;
+        }
+      });
+
+      // ── Indicateur "en train d'écrire" ────────────────────────────────────
+      onValue(ref(db, "lobbyTyping/" + salonId), (snap) => {
+        if (!snap.exists()) {
+          document.getElementById("typing-indicator").textContent = "";
+          return;
+        }
+        const now = Date.now();
+        const typing = Object.entries(snap.val())
+          .filter(([id, v]) => id !== me.id && now - (v.ts || 0) < 3000)
+          .map(([, v]) => v.name);
+        const el = document.getElementById("typing-indicator");
+        if (typing.length === 0) el.textContent = "";
+        else if (typing.length === 1)
+          el.textContent = typing[0] + " est en train d'écrire…";
+        else el.textContent = typing.join(", ") + " écrivent…";
+      });
+
+      // ── Fonctions chat ────────────────────────────────────────────────────
+      function addChat(msg, sys) {
+        push(ref(db, "salons/" + salonId + "/chat"), {
+          text: msg,
+          sys: sys || false,
+          author: me.name,
+          t: Date.now(),
+        });
+      }
+
+      window.sendChat = function () {
+        const inp = document.getElementById("chat-inp");
+        const txt = inp.value.trim();
+        if (!txt) return;
+        addChat(txt, false);
+        inp.value = "";
+        // Effacer l'indicateur de frappe
+        set(ref(db, "lobbyTyping/" + salonId + "/" + me.id), null);
+        clearTimeout(typingTimer);
+        closeEmojiPicker();
+      };
+
+      window.onTyping = function () {
+        set(ref(db, "lobbyTyping/" + salonId + "/" + me.id), {
+          name: me.name,
+          ts: Date.now(),
+        });
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(() => {
+          set(ref(db, "lobbyTyping/" + salonId + "/" + me.id), null);
+        }, 2500);
+      };
+
+      // ── Emoji picker ──────────────────────────────────────────────────────
+      window.toggleEmojiPicker = function () {
+        document.getElementById("emoji-picker").classList.toggle("open");
+      };
+      function closeEmojiPicker() {
+        document.getElementById("emoji-picker").classList.remove("open");
+      }
+      window.insertEmoji = function (emoji) {
+        const inp = document.getElementById("chat-inp");
+        const pos = inp.selectionStart;
+        inp.value = inp.value.slice(0, pos) + emoji + inp.value.slice(pos);
+        inp.focus();
+        inp.setSelectionRange(pos + emoji.length, pos + emoji.length);
+        closeEmojiPicker();
+      };
+      // Fermer le picker si on clique ailleurs
+      document.addEventListener("click", (e) => {
+        if (!e.target.closest(".chat-row-wrap")) closeEmojiPicker();
+      });
+
+      // ── Toast nouveau message ─────────────────────────────────────────────
+      function isChatVisible() {
+        const el = document.getElementById("lobby-chat");
+        if (!el) return true;
+        const rect = el.getBoundingClientRect();
+        return rect.top < window.innerHeight && rect.bottom > 0;
+      }
+
+      function showChatNotif(author, text) {
+        const n = document.getElementById("chat-notif");
+        const txt = document.getElementById("chat-notif-text");
+        const preview = text.length > 30 ? text.slice(0, 30) + "…" : text;
+        txt.textContent = "💬 " + author + " : " + preview;
+        n.classList.add("show");
+        clearTimeout(n._timer);
+        n._timer = setTimeout(() => n.classList.remove("show"), 4000);
+      }
+
+      window.dismissChatNotif = function () {
+        document.getElementById("chat-notif").classList.remove("show");
+        unreadCount = 0;
+        document.getElementById("unread-count").innerHTML = "";
+      };
+
+      // Remettre à zéro les non-lus quand on scroll jusqu'au chat
+      const chatObserver = new IntersectionObserver(
+        (entries) => {
+          if (entries[0].isIntersecting) {
+            unreadCount = 0;
+            document.getElementById("unread-count").innerHTML = "";
+            document.getElementById("chat-notif").classList.remove("show");
+          }
+        },
+        { threshold: 0.5 }
+      );
+      chatObserver.observe(document.getElementById("lobby-chat"));
+
+      // ── Joueurs ───────────────────────────────────────────────────────────
+      function renderPlayers(salon) {
+        const c = document.getElementById("players-list");
+        c.innerHTML = salon.players
+          .map(
+            (p) => `
+          <div class="player-row">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="online-dot dot-online" title="En ligne"></span>
+              <div class="avatar">${p.name[0].toUpperCase()}</div>
+              ${p.name}
+              ${
+                p.id === salon.host
+                  ? '<span class="badge gold" style="margin-left:6px">Hôte</span>'
+                  : ""
+              }
+              ${
+                p.isBot
+                  ? '<span class="badge gray" style="margin-left:4px">Bot</span>'
+                  : ""
+              }
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="badge green">Prêt</span>
+              ${
+                isHost && p.id !== me.id && !p.isBot
+                  ? `<button onclick="openTransferModal()" title="Donner le rôle d'hôte" style="background:#1a2a1a;border:1px solid #3a6a3a;color:#6dbe6d;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:0.72rem">🎖️</button>
+                     <button onclick="kickPlayer('${p.id}')" style="background:#3a1a1a;border:1px solid #6a3a3a;color:#be6d6d;border-radius:6px;padding:2px 8px;cursor:pointer;font-size:0.72rem">Exclure</button>`
+                  : ""
+              }
+            </div>
+          </div>`
+          )
+          .join("");
+      }
+
+      // ── Rôles ─────────────────────────────────────────────────────────────
+      function renderRolesConfig() {
+        const c = document.getElementById("roles-config");
+        c.innerHTML = ROLES_CONFIG.map((r) => {
+          const count = rolesCount[r.id];
+          const active = count > 0;
+          return `
+          <div id="rolecard-${r.id}" style="
+            position:relative;border-radius:10px;overflow:visible;
+            border:2px solid ${active ? "var(--accent)" : "#252d3a"};
+            transition:0.2s;opacity:${active ? 1 : 0.55};
+            width:90px;flex-shrink:0;display:flex;flex-direction:column;
+          ">
+            <div style="position:relative;border-radius:8px;overflow:hidden">
+              <img src="${
+                r.img
+              }" style="width:100%;display:block;height:118px;object-fit:cover;object-position:top"/>
+              <div style="position:absolute;inset:0;background:linear-gradient(transparent 50%,rgba(0,0,0,0.92));display:flex;flex-direction:column;justify-content:flex-end;padding:4px 3px">
+                <div style="font-size:0.52rem;color:#ddd;text-align:center;line-height:1.2;font-family:'Cinzel',serif">${
+                  r.name
+                }</div>
+              </div>
+              ${
+                active
+                  ? `<div class="role-count-badge" style="position:absolute;top:4px;right:4px;background:var(--accent);color:#000;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:700;pointer-events:none">${count}</div>`
+                  : ""
+              }
+            </div>
+            <div style="display:flex;gap:2px;margin-top:4px;padding:0 2px 2px">
+              <button onclick="changeRole('${r.id}',-1)" style="
+                flex:1;height:26px;border-radius:6px;border:1px solid #444;
+                background:#1c2230;color:#fff;font-size:1rem;font-weight:700;
+                cursor:pointer;transition:0.15s;line-height:1;
+                ${count <= r.min ? "opacity:0.3;cursor:not-allowed" : ""}
+              ">−</button>
+              <button onclick="changeRole('${r.id}',+1)" style="
+                flex:1;height:26px;border-radius:6px;border:1px solid #444;
+                background:#1c2230;color:#fff;font-size:1rem;font-weight:700;
+                cursor:pointer;transition:0.15s;line-height:1;
+                ${count >= r.max ? "opacity:0.3;cursor:not-allowed" : ""}
+              ">+</button>
+            </div>
+          </div>`;
+        }).join("");
+        updateTotalCards();
+      }
+
+      window.changeRole = function (id, delta) {
+        const r = ROLES_CONFIG.find((x) => x.id === id);
+        if (!r) return;
+        const newVal = Math.min(r.max, Math.max(r.min, rolesCount[id] + delta));
+        if (newVal === rolesCount[id]) return;
+
+        // Exclusivité mutuelle : Voyante normale ↔ Voyante Bavarde
+        if (id === "seer" && newVal > 0 && rolesCount["voyantebavarde"] > 0) {
+          rolesCount["voyantebavarde"] = 0;
+          // Mettre à jour visuellement la carte voyantebavarde
+          const card = document.getElementById("rolecard-voyantebavarde");
+          if (card) {
+            card.style.border = "2px solid #252d3a";
+            card.style.opacity = "0.55";
+            const badge = card.querySelector(".role-count-badge");
+            if (badge) badge.remove();
+          }
+          showExclusiveNotif("seer");
+        }
+        if (id === "voyantebavarde" && newVal > 0 && rolesCount["seer"] > 0) {
+          rolesCount["seer"] = 0;
+          const card = document.getElementById("rolecard-seer");
+          if (card) {
+            card.style.border = "2px solid #252d3a";
+            card.style.opacity = "0.55";
+            const badge = card.querySelector(".role-count-badge");
+            if (badge) badge.remove();
+          }
+          showExclusiveNotif("voyantebavarde");
+        }
+
+        rolesCount[id] = newVal;
+
+        const card = document.getElementById("rolecard-" + id);
+        if (!card) return;
+        const active = newVal > 0;
+        card.style.border = `2px solid ${active ? "var(--accent)" : "#252d3a"}`;
+        card.style.opacity = active ? 1 : 0.55;
+
+        // Mettre à jour le badge
+        const imgWrap = card.querySelector("div");
+        let badge = imgWrap.querySelector(".role-count-badge");
+        if (active) {
+          if (badge) badge.textContent = newVal;
+          else {
+            badge = document.createElement("div");
+            badge.className = "role-count-badge";
+            badge.style.cssText =
+              "position:absolute;top:4px;right:4px;background:var(--accent);color:#000;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:700;pointer-events:none";
+            badge.textContent = newVal;
+            imgWrap.appendChild(badge);
+          }
+        } else if (badge) badge.remove();
+
+        // Mettre à jour l'état des boutons +/-
+        const [btnMinus, btnPlus] = card.querySelectorAll("button");
+        if (btnMinus) btnMinus.style.opacity = newVal <= r.min ? "0.3" : "1";
+        if (btnPlus) btnPlus.style.opacity = newVal >= r.max ? "0.3" : "1";
+
+        updateTotalCards();
+      };
+
+      window.toggleRole = window.changeRole; // compatibilité
+
+      // Compte les loups : loup-garou + grand méchant loup + loup blanc
+      function countWolves() {
+        return (
+          (rolesCount["wolf"] || 0) +
+          (rolesCount["grandmechant"] || 0) +
+          (rolesCount["whitewolf"] || 0)
+        );
+      }
+
+      // Compte les villageois au sens large (tout sauf loups)
+      function countVillagers() {
+        const wolfIds = ["wolf", "grandmechant", "whitewolf"];
+        return Object.entries(rolesCount)
+          .filter(([id]) => !wolfIds.includes(id))
+          .reduce((a, [, v]) => a + v, 0);
+      }
+
+      function updateTotalCards(playerCount) {
+        const total = Object.values(rolesCount).reduce((a, b) => a + b, 0);
+        const tc = document.getElementById("total-cards");
+        if (tc) tc.textContent = total;
+        const players =
+          playerCount ||
+          parseInt(
+            document.getElementById("total-players")?.textContent || "1"
+          );
+        const btn = document.getElementById("btn-start");
+        const hint = document.getElementById("start-hint");
+        const adjBtn = document.getElementById("btn-adjust");
+        if (!btn) return;
+
+        // Sync salon.max avec le total de cartes (hôte seulement)
+        if (isHost && total >= 4) {
+          get(salonRef).then((snap) => {
+            if (!snap.exists()) return;
+            const s = snap.val();
+            if (s.max !== total) {
+              s.max = total;
+              set(salonRef, s).then(() => {
+                if (s.players.length < total) addBotsGradually(s);
+              });
+            }
+          });
+        }
+
+        // Vérification équilibre loups / villageois
+        const wolves = countWolves();
+        const villagers = countVillagers();
+        const balanced = villagers > wolves;
+
+        // Mettre à jour l'indicateur d'équilibre
+        const balEl = document.getElementById("balance-hint");
+        if (balEl) {
+          if (!balanced && total > 0) {
+            balEl.innerHTML = `🔴 <strong>Trop de loups !</strong> Il faut plus de villageois que de loups (${wolves} 🐺 vs ${villagers} 🌾).`;
+            balEl.style.background = "#1a0a0a";
+            balEl.style.border = "1px solid #3a1a1a";
+            balEl.style.color = "#be6d6d";
+            balEl.style.display = "block";
+          } else if (total > 0) {
+            balEl.innerHTML = `🟢 Équilibre : ${wolves} 🐺 loup${
+              wolves > 1 ? "s" : ""
+            } vs ${villagers} 🌾 villageois`;
+            balEl.style.background = "#0a1a0a";
+            balEl.style.border = "1px solid #1a3a1a";
+            balEl.style.color = "#6dbe6d";
+            balEl.style.display = "block";
+          } else {
+            balEl.style.display = "none";
+          }
+        }
+
+        if (players < 4) {
+          btn.disabled = true;
+          if (hint)
+            hint.innerHTML = `⚠️ Il faut au moins 4 joueurs (${players}/4).`;
+          if (adjBtn) adjBtn.style.display = "none";
+        } else if (total !== players) {
+          btn.disabled = true;
+          const diff = total - players;
+          if (diff > 0) {
+            if (hint)
+              hint.innerHTML = `⏳ ${diff} bot(s) en cours d'arrivée… (${players}/${total})`;
+          } else {
+            if (hint)
+              hint.innerHTML = `⚠️ <strong>${Math.abs(
+                diff
+              )} carte(s) manquante(s).</strong> Ajoutez des cartes ou cliquez Ajuster.`;
+          }
+          const othersTotal = total - rolesCount["villager"];
+          const needed = players - othersTotal;
+          if (needed >= 1 && needed <= 20 && adjBtn) {
+            adjBtn.style.display = "block";
+            adjBtn.textContent = `⚡ Ajuster auto (${needed} Villageois)`;
+          } else if (adjBtn) {
+            adjBtn.style.display = "none";
+          }
+        } else if (!balanced) {
+          // Cartes OK mais trop de loups
+          btn.disabled = true;
+          if (hint)
+            hint.innerHTML = `🐺 Rééquilibrez : trop de loups par rapport aux villageois !`;
+          if (adjBtn) adjBtn.style.display = "none";
+        } else {
+          btn.disabled = false;
+          if (hint)
+            hint.innerHTML = `✅ ${players} joueurs — configuration parfaite !`;
+          if (adjBtn) adjBtn.style.display = "none";
+        }
+      }
+
+      function showExclusiveNotif(chosen) {
+        const names = { seer: "Voyante", voyantebavarde: "Voyante Bavarde" };
+        const other = chosen === "seer" ? "voyantebavarde" : "seer";
+        const n = document.getElementById("notif");
+        if (n) {
+          n.textContent = `⚠️ ${names[other]} retirée — Voyante et Voyante Bavarde sont mutuellement exclusives.`;
+          n.style.display = "block";
+          setTimeout(() => (n.style.display = "none"), 3500);
+        }
+      }
+
+      window.autoAdjust = function () {
+        const players = parseInt(
+          document.getElementById("total-players")?.textContent || "1"
+        );
+        const othersTotal = Object.entries(rolesCount)
+          .filter(([id]) => id !== "villager")
+          .reduce((a, [, v]) => a + v, 0);
+        const needed = players - othersTotal;
+        if (needed < 1 || needed > 20) return;
+        rolesCount["villager"] = needed;
+        renderRolesConfig();
+        updateTotalCards();
+      };
+
+      window.kickPlayer = async function (playerId) {
+        const snap = await get(salonRef);
+        if (!snap.exists()) return;
+        const salon = snap.val();
+        const player = salon.players.find((p) => p.id === playerId);
+        if (!player) return;
+        salon.players = salon.players.filter((p) => p.id !== playerId);
+        await set(salonRef, salon);
+        addChat("<strong>" + player.name + "</strong> a été exclu.", true);
+      };
+
+      // ── Transfert du rôle d'hôte ──────────────────────────────────────────
+      window.transferHost = async function (newHostId) {
+        const snap = await get(salonRef);
+        if (!snap.exists()) return;
+        const salon = snap.val();
+        const newHost = salon.players.find((p) => p.id === newHostId);
+        if (!newHost) return;
+
+        await update(salonRef, {
+          host: newHostId,
+          hostName: newHost.name,
+          hostLastSeen: Date.now(),
+          hostAbsent: false,
+        });
+
+        // Fermer la modale
+        const modal = document.getElementById("transfer-modal");
+        if (modal) modal.remove();
+        showNotif("🎖️ " + newHost.name + " est maintenant l'hôte !");
+      };
+
+      window.openTransferModal = function () {
+        get(salonRef).then((snap) => {
+          if (!snap.exists()) return;
+          const salon = snap.val();
+          const others = (salon.players || []).filter(
+            (p) => p.id !== me.id && !p.isBot
+          );
+          if (!others.length) {
+            showNotif("Aucun joueur humain à qui transférer le rôle.");
+            return;
+          }
+          const existing = document.getElementById("transfer-modal");
+          if (existing) existing.remove();
+
+          const modal = document.createElement("div");
+          modal.id = "transfer-modal";
+          modal.style.cssText =
+            "position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;padding:1rem";
+          modal.innerHTML = `
+            <div style="background:#0e1118;border:1px solid var(--accent);border-radius:16px;padding:1.5rem;max-width:380px;width:100%;text-align:center">
+              <h3 style="color:var(--accent);margin-bottom:0.3rem">🎖️ Transférer le rôle d'hôte</h3>
+              <p style="font-size:0.82rem;color:#888;margin-bottom:1rem">Choisissez le joueur qui deviendra le nouvel hôte :</p>
+              <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:1rem">
+                ${others
+                  .map(
+                    (p) => `
+                  <button onclick="transferHost('${
+                    p.id
+                  }')" style="background:#1a1a2e;border:1px solid #2a3050;border-radius:10px;padding:0.6rem 1rem;color:var(--highlight);cursor:pointer;font-size:0.9rem;display:flex;align-items:center;gap:10px;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='#2a3050'">
+                    <div class="avatar" style="width:32px;height:32px;font-size:0.8rem;flex-shrink:0">${p.name[0].toUpperCase()}</div>
+                    <span>${p.name}</span>
+                    <span style="margin-left:auto;font-size:0.7rem;color:#6dbe6d">→ Hôte</span>
+                  </button>
+                `
+                  )
+                  .join("")}
+              </div>
+              <button onclick="document.getElementById('transfer-modal').remove()" class="btn secondary full" style="font-size:0.85rem">Annuler</button>
+            </div>
+          `;
+          document.body.appendChild(modal);
+        });
+      };
+
+      window.leaveLobby = async function () {
+        const snap = await get(salonRef);
+        if (!snap.exists()) {
+          window.location.href = "accueil.html";
+          return;
+        }
+        const salon = snap.val();
+        const amHost = salon.host === me.id;
+        const others = (salon.players || []).filter(
+          (p) => p.id !== me.id && !p.isBot
+        );
+
+        // Hôte avec d'autres joueurs → lui proposer de transférer
+        if (amHost && others.length > 0) {
+          const existing = document.getElementById("leave-modal");
+          if (existing) existing.remove();
+
+          const modal = document.createElement("div");
+          modal.id = "leave-modal";
+          modal.style.cssText =
+            "position:fixed;inset:0;z-index:999;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;padding:1rem";
+          modal.innerHTML = `
+            <div style="background:#0e1118;border:1px solid #c9a44c;border-radius:16px;padding:1.5rem;max-width:380px;width:100%;text-align:center">
+              <div style="font-size:2.5rem;margin-bottom:0.5rem">🎖️</div>
+              <h3 style="color:var(--accent);margin-bottom:0.4rem">Vous êtes l'hôte</h3>
+              <p style="font-size:0.85rem;color:#888;margin-bottom:1.2rem">
+                Voulez-vous transférer votre rôle avant de partir,<br>
+                ou simplement quitter ? Le salon restera actif.
+              </p>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <button onclick="openTransferModal();document.getElementById('leave-modal').remove()" class="btn full" style="background:#1a2a1a;border-color:#3a6a3a;color:#6dbe6d">
+                  🎖️ Transférer le rôle d'hôte
+                </button>
+                <button onclick="_doLeave()" style="background:#1a1a2e;border:1px solid #2a3050;color:#aaa;border-radius:10px;padding:0.6rem 1rem;cursor:pointer;font-size:0.88rem">
+                  🚪 Quitter sans transférer
+                </button>
+                <button onclick="document.getElementById('leave-modal').remove()" class="btn secondary full" style="font-size:0.85rem">Annuler</button>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(modal);
+          return;
+        }
+
+        await _doLeave();
+      };
+
+      window._doLeave = async function () {
+        const modal = document.getElementById("leave-modal");
+        if (modal) modal.remove();
+        const snap = await get(salonRef);
+        if (snap.exists()) {
+          const salon = snap.val();
+          salon.players = salon.players.filter((p) => p.id !== me.id);
+          if (salon.players.length === 0) await remove(salonRef);
+          else await set(salonRef, salon);
+        }
+        set(presenceRef, null);
+        window.location.href = "accueil.html";
+      };
+
+      // ── Réglages de partie ────────────────────────────────────────────────
+      function updateConfigLabels() {
+        const dayVal = parseInt(
+          document.getElementById("cfg-day")?.value || 180
+        );
+        const voteVal = parseInt(
+          document.getElementById("cfg-vote")?.value || 60
+        );
+        const dayLbl = document.getElementById("cfg-day-label");
+        const voteLbl = document.getElementById("cfg-vote-label");
+        if (dayLbl) {
+          const m = Math.floor(dayVal / 60),
+            s = dayVal % 60;
+          dayLbl.textContent =
+            m > 0 ? (s > 0 ? `${m} min ${s} s` : `${m} min`) : `${s} s`;
+        }
+        if (voteLbl) voteLbl.textContent = voteVal + " s";
+      }
+
+      function updateToggleStyle() {
+        const checked = document.getElementById("cfg-blank")?.checked;
+        const track = document.getElementById("cfg-blank-track");
+        const thumb = document.getElementById("cfg-blank-thumb");
+        // Bots toggle style
+        const botsChecked = document.getElementById("cfg-bots")?.checked ?? true;
+        const botsTrack = document.getElementById("cfg-bots-track");
+        const botsThumb = document.getElementById("cfg-bots-thumb");
+        if (botsTrack) botsTrack.style.background = botsChecked ? "#2a5a2a" : "#252d3a";
+        if (botsThumb) { botsThumb.style.left = botsChecked ? "23px" : "3px"; botsThumb.style.background = botsChecked ? "#6dbe6d" : "#aaa"; }
+        if (track) track.style.background = checked ? "#2a5a2a" : "#252d3a";
+        if (thumb) {
+          thumb.style.left = checked ? "23px" : "3px";
+          thumb.style.background = checked ? "#6dbe6d" : "#aaa";
+        }
+      }
+
+      function saveConfig() {
+        if (!isHost) return;
+        const dayVal = parseInt(
+          document.getElementById("cfg-day")?.value || 180
+        );
+        const voteVal = parseInt(
+          document.getElementById("cfg-vote")?.value || 60
+        );
+        const blankVal = document.getElementById("cfg-blank")?.checked ?? true;
+        const botsVal = document.getElementById("cfg-bots")?.checked ?? true;
+        update(salonRef, {
+          config: {
+            allowBots: botsVal,
+            dayDuration: dayVal,
+            voteDuration: voteVal,
+            allowBlank: blankVal,
+          },
+        });
+      }
+
+      window.updateConfig = function () {
+        updateConfigLabels();
+        updateToggleStyle();
+        saveConfig();
+      };
+
+      // Init labels on load
+      updateConfigLabels();
+      updateToggleStyle();
+
+      window.startGame = async function () {
+        const snap = await get(salonRef);
+        if (!snap.exists()) return;
+        const salon = snap.val();
+        if (salon.players.length < 4) {
+          showNotif("Il faut au moins 4 joueurs !");
+          return;
+        }
+        const n = salon.players.length;
+        const pool = [];
+        ROLES_CONFIG.forEach((r) => {
+          for (let i = 0; i < rolesCount[r.id]; i++) pool.push(r.id);
+        });
+        while (pool.length < n) pool.push("villager");
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        salon.players.forEach((p, i) => (p.role = pool[i]));
+        salon.status = "started";
+        salon.phase = "day";
+        salon.turn = 1;
+        // S'assurer que la config est présente
+        if (!salon.config) {
+          salon.config = {
+            dayDuration: 180,
+            voteDuration: 60,
+            allowBlank: true,
+          };
+        }
+        await set(salonRef, salon);
+      };
+
+      async function addBotsGradually(salon) {
+          const botsEnabled = document.getElementById("cfg-bots")?.checked ?? true;
+          if (!botsEnabled) return;
+          const needed = salon.max - salon.players.length;
+          if (needed <= 0) return;
+        let added = 0;
+        const interval = setInterval(async () => {
+          if (added >= needed || botIdx >= BOT_NAMES.length) {
+            clearInterval(interval);
+            return;
+          }
+          const snap = await get(salonRef);
+          if (!snap.exists()) {
+            clearInterval(interval);
+            return;
+          }
+          const s = snap.val();
+          if (s.players.length >= s.max) {
+            clearInterval(interval);
+            return;
+          }
+          const name = BOT_NAMES[botIdx++];
+          if (s.players.find((p) => p.name === name)) {
+            added++;
+            return;
+          }
+          s.players.push({ id: "bot_" + name, name, ready: true, isBot: true });
+          await set(salonRef, s);
+          addChat("<strong>" + name + "</strong> a rejoint le salon.", true);
+          added++;
+        }, 600);
+      }
+
+      function showNotif(msg) {
+        const n = document.getElementById("notif");
+        n.textContent = msg;
+        n.style.display = "block";
+        setTimeout(() => (n.style.display = "none"), 3000);
+      }
+      } // fin _initLobby
+    </script>
+  </body>
+</html>
