@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Objectifs — Loup-Garou</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    .obj-grid { display: flex; flex-direction: column; gap: 8px; }
+    .obj-card {
+      background: #0e1118; border: 1px solid #1e2535;
+      border-radius: 12px; padding: 12px 16px;
+      display: flex; align-items: center; gap: 14px;
+      transition: 0.2s;
+    }
+    .obj-card.done { border-color: #3a6a2a; background: #0a1408; }
+    .obj-card.secret-locked { opacity: 0.6; border-style: dashed; }
+    .obj-icon { font-size: 1.8rem; width: 40px; text-align: center; flex-shrink: 0; }
+    .obj-body { flex: 1; min-width: 0; }
+    .obj-name { font-size: 0.92rem; font-weight: 600; color: var(--highlight); margin-bottom: 2px; }
+    .obj-desc { font-size: 0.75rem; color: #666; }
+    .obj-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    .obj-pts { font-size: 0.85rem; font-weight: 700; color: #6dbe6d; white-space: nowrap; }
+    .obj-titre {
+      font-size: 0.65rem; padding: 2px 8px; border-radius: 20px;
+      font-family: 'Cinzel', serif; white-space: nowrap;
+    }
+    .obj-progress { margin-top: 6px; }
+    .obj-pbar-track { background: #10131c; border-radius: 6px; height: 5px; overflow: hidden; border: 1px solid #252d3a; }
+    .obj-pbar-fill { height: 100%; border-radius: 6px; background: var(--accent); transition: width 0.5s; }
+    .obj-pbar-label { font-size: 0.65rem; color: #555; margin-top: 3px; }
+    .done-stamp {
+      font-size: 0.65rem; padding: 2px 8px; border-radius: 20px;
+      background: #1a2a10; color: #6dbe6d; border: 1px solid #3a6a2a;
+      font-weight: 700;
+    }
+    .section-title {
+      font-size: 0.7rem; color: #555; text-transform: uppercase;
+      letter-spacing: 1.5px; margin: 1.5rem 0 0.5rem; padding-bottom: 6px;
+      border-bottom: 1px solid #1e2535;
+    }
+    .tab-row { display: flex; gap: 6px; margin-bottom: 1.2rem; flex-wrap: wrap; }
+    .tab-btn {
+      padding: 5px 14px; border-radius: 20px; font-size: 0.78rem;
+      border: 1px solid #252d3a; background: #10131c; color: #888;
+      cursor: pointer; font-family: inherit; transition: 0.15s;
+    }
+    .tab-btn.active { background: #1a1200; border-color: var(--accent); color: var(--accent); }
+    .stats-bar {
+      background: #0e1118; border: 1px solid #1e2535; border-radius: 12px;
+      padding: 12px 16px; display: flex; gap: 20px; flex-wrap: wrap;
+      margin-bottom: 1.2rem; align-items: center;
+    }
+    .sbar-item { text-align: center; }
+    .sbar-val { font-size: 1.4rem; font-weight: 700; color: var(--accent); font-family: 'Cinzel', serif; }
+    .sbar-lbl { font-size: 0.65rem; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  </style>
+</head>
+<body style="position:relative">
+  <div class="notif" id="notif"></div>
+
+  <div class="user-bar">
+    <span>Connecté : <strong id="top-name"></strong></span>
+    <button class="btn secondary" style="padding:0.5rem 1rem;font-size:0.82rem"
+      onclick="window.location.href='accueil.html'">← Accueil</button>
+    <button class="btn secondary" style="padding:0.5rem 1rem;font-size:0.82rem"
+      onclick="window.location.href='profil.html'">👤 Profil</button>
+  </div>
+
+  <div class="hero" style="min-height:28vh">
+    <div>
+      <h1>🎯 Objectifs</h1>
+      <p style="font-size:0.95rem;color:#aaa;font-style:italic">
+        Accomplis des défis pour gagner des points et débloquer des titres exclusifs
+      </p>
+    </div>
+  </div>
+
+  <div style="max-width:800px;margin:2rem auto;padding:0 1rem">
+
+    <div class="stats-bar">
+      <div class="sbar-item">
+        <div class="sbar-val" id="sb-done">0</div>
+        <div class="sbar-lbl">Complétés</div>
+      </div>
+      <div class="sbar-item">
+        <div class="sbar-val" id="sb-total">0</div>
+        <div class="sbar-lbl">Total</div>
+      </div>
+      <div class="sbar-item">
+        <div class="sbar-val" id="sb-pts">0</div>
+        <div class="sbar-lbl">Pts gagnés</div>
+      </div>
+      <div style="flex:1;min-width:120px">
+        <div style="font-size:0.7rem;color:#555;margin-bottom:4px">Progression globale</div>
+        <div style="background:#10131c;border-radius:6px;height:8px;overflow:hidden;border:1px solid #252d3a">
+          <div id="global-bar" style="height:100%;background:var(--accent);border-radius:6px;transition:width 0.5s;width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-row">
+      <button class="tab-btn active" id="tab-all" onclick="setTab('all')">Tous</button>
+      <button class="tab-btn" id="tab-village" onclick="setTab('village')">🏘️ Village</button>
+      <button class="tab-btn" id="tab-loups" onclick="setTab('loups')">🐺 Loups</button>
+      <button class="tab-btn" id="tab-secret" onclick="setTab('secret')">❓ Secrets</button>
+      <button class="tab-btn" id="tab-done" onclick="setTab('done')">✅ Complétés</button>
+    </div>
+
+    <div id="obj-list" class="obj-grid"></div>
+  </div>
+
+  <footer>© 2025 – Loup-Garou en Ligne</footer>
+
+  <script type="module">
+    import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+    import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBAAnZP5J_RsTF-puLIkloRT6pyS3TgtAM",
+      authDomain: "loup-garou-en-ligne-32f5b.firebaseapp.com",
+      databaseURL: "https://loup-garou-en-ligne-32f5b-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "loup-garou-en-ligne-32f5b",
+      storageBucket: "loup-garou-en-ligne-32f5b.firebasestorage.app",
+      messagingSenderId: "536792759140",
+      appId: "1:536792759140:web:aefc9cf5e0b271204b9871",
+    };
+    let app; try { app = initializeApp(firebaseConfig); } catch(e) { app = getApp(); }
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+    onAuthStateChanged(auth, u => { if (!u) window.location.href = "connexion.html"; });
+
+    const SESSION_KEY = "lg_session_v2";
+    const session = localStorage.getItem(SESSION_KEY);
+    if (!session) window.location.href = "connexion.html";
+    let me = JSON.parse(session);
+    document.getElementById("top-name").textContent = me.name;
+
+    // ── Définition de tous les objectifs ─────────────────────────────────────
+    const OBJECTIFS = [
+      // Village
+      { id:"v_premier_sang",   cat:"village", secret:false,
+        icon:"🏘️", name:"Premier sang",
+        desc:"Gagner 1 partie côté Village",
+        pts:20, titreLabel:"🌿 Défenseur", titreBg:"#1a2a10", titreFg:"#6dbe6d", titreBorder:"#3a6a2a",
+        check: s => (s.winsVillage||0) >= 1, progress: s => ({ cur: Math.min(s.winsVillage||0,1), max:1 }) },
+
+      { id:"v_oracle",         cat:"village", secret:false,
+        icon:"🔮", name:"L'Œil du village",
+        desc:"Gagner 3 parties en tant que Voyante",
+        pts:35, titreLabel:"🔮 Oracle", titreBg:"#1a1a2a", titreFg:"#9999ff", titreBorder:"#4a4a8a",
+        check: s => (s.winsVoyante||0) >= 3, progress: s => ({ cur: Math.min(s.winsVoyante||0,3), max:3 }) },
+
+      { id:"v_alchimiste",     cat:"village", secret:false,
+        icon:"🧙", name:"Maîtresse des potions",
+        desc:"Gagner 3 parties en tant que Sorcière",
+        pts:35, titreLabel:"🧙 Alchimiste", titreBg:"#1a0a2a", titreFg:"#cc99ee", titreBorder:"#6a3a8a",
+        check: s => (s.winsSorciere||0) >= 3, progress: s => ({ cur: Math.min(s.winsSorciere||0,3), max:3 }) },
+
+      { id:"v_gardien",        cat:"village", secret:false,
+        icon:"🛡️", name:"Bouclier du peuple",
+        desc:"Gagner 3 parties en tant que Salvateur",
+        pts:35, titreLabel:"🛡️ Protecteur", titreBg:"#0a1a2a", titreFg:"#6db4ff", titreBorder:"#2a5a8a",
+        check: s => (s.winsSalvateur||0) >= 3, progress: s => ({ cur: Math.min(s.winsSalvateur||0,3), max:3 }) },
+
+      { id:"v_traqueur",       cat:"village", secret:false,
+        icon:"🏹", name:"Justice ultime",
+        desc:"Gagner 3 parties en tant que Chasseur",
+        pts:35, titreLabel:"🏹 Traqueur", titreBg:"#1a1200", titreFg:"#c9a44c", titreBorder:"#6a5a1a",
+        check: s => (s.winsChasseur||0) >= 3, progress: s => ({ cur: Math.min(s.winsChasseur||0,3), max:3 }) },
+
+      { id:"v_heros",          cat:"village", secret:false,
+        icon:"🌕", name:"Lumière dans les ténèbres",
+        desc:"Gagner 10 parties côté Village au total",
+        pts:80, titreLabel:"🌕 Héros du Village", titreBg:"#1a1800", titreFg:"#f2e5c6", titreBorder:"#6a6030",
+        check: s => (s.winsVillage||0) >= 10, progress: s => ({ cur: Math.min(s.winsVillage||0,10), max:10 }) },
+
+      // Loups
+      { id:"l_meute",          cat:"loups", secret:false,
+        icon:"🐺", name:"La meute s'éveille",
+        desc:"Gagner 1 partie en tant que Loup-Garou",
+        pts:25, titreLabel:"🐺 Loup Affamé", titreBg:"#1a0808", titreFg:"#be6d6d", titreBorder:"#6a2a2a",
+        check: s => (s.winsLoup||0) >= 1, progress: s => ({ cur: Math.min(s.winsLoup||0,1), max:1 }) },
+
+      { id:"l_terreur",        cat:"loups", secret:false,
+        icon:"😈", name:"Le grand méchant",
+        desc:"Gagner 3 parties en tant que Grand Méchant Loup",
+        pts:50, titreLabel:"😈 Terreur", titreBg:"#1a0808", titreFg:"#ff6666", titreBorder:"#6a1a1a",
+        check: s => (s.winsGrandMechant||0) >= 3, progress: s => ({ cur: Math.min(s.winsGrandMechant||0,3), max:3 }) },
+
+      { id:"l_solitaire",      cat:"loups", secret:false,
+        icon:"🤍", name:"Solitaire absolu",
+        desc:"Gagner 1 partie en tant que Loup Blanc",
+        pts:60, titreLabel:"🤍 Loup Solitaire", titreBg:"#0a0a1a", titreFg:"#ddddff", titreBorder:"#4a4a7a",
+        check: s => (s.winsLoupBlanc||0) >= 1, progress: s => ({ cur: Math.min(s.winsLoupBlanc||0,1), max:1 }) },
+
+      { id:"l_alpha",          cat:"loups", secret:false,
+        icon:"🌑", name:"Roi de la nuit",
+        desc:"Gagner 10 parties côté Loups au total",
+        pts:100, titreLabel:"🌑 Alpha Suprême", titreBg:"#1a0808", titreFg:"#be4444", titreBorder:"#6a1a1a",
+        check: s => (s.winsLoups||0) >= 10, progress: s => ({ cur: Math.min(s.winsLoups||0,10), max:10 }) },
+
+      // Secrets
+      { id:"s_dernier",        cat:"secret", secret:true,
+        icon:"💀", name:"Le Dernier des Justes",
+        desc:"Survivre jusqu'à la fin en étant le seul villageois restant",
+        pts:45, titreLabel:"💀 Dernier des Justes", titreBg:"#1a0a1a", titreFg:"#aa88cc", titreBorder:"#5a3a6a",
+        check: s => (s.secretDernierJuste||0) >= 1, progress: s => ({ cur: Math.min(s.secretDernierJuste||0,1), max:1 }) },
+
+      { id:"s_ange",           cat:"secret", secret:true,
+        icon:"😇", name:"Martyr Béni",
+        desc:"Gagner une partie en tant qu'Ange (éliminé au 1er vote)",
+        pts:70, titreLabel:"😇 Martyr Béni", titreBg:"#0a0a14", titreFg:"#ffffff", titreBorder:"#5a5a8a",
+        check: s => (s.winsAnge||0) >= 1, progress: s => ({ cur: Math.min(s.winsAnge||0,1), max:1 }) },
+
+      { id:"s_amour_maudit",   cat:"secret", secret:true,
+        icon:"💘", name:"Amour Maudit",
+        desc:"Gagner une partie en tant qu'Amoureux avec un loup",
+        pts:80, titreLabel:"💘 Amour Maudit", titreBg:"#1a0a10", titreFg:"#d4537e", titreBorder:"#6a2a4a",
+        check: s => (s.secretAmourMaudit||0) >= 1, progress: s => ({ cur: Math.min(s.secretAmourMaudit||0,1), max:1 }) },
+
+      { id:"s_flute",          cat:"secret", secret:true,
+        icon:"🎵", name:"Envoûteur Suprême",
+        desc:"Charmer tout le village et gagner en Joueur de Flûte",
+        pts:90, titreLabel:"🎵 Envoûteur Suprême", titreBg:"#0a0a1a", titreFg:"#c9a4ff", titreBorder:"#4a2a8a",
+        check: s => (s.winsFlute||0) >= 1, progress: s => ({ cur: Math.min(s.winsFlute||0,1), max:1 }) },
+
+      { id:"s_cameleon",       cat:"secret", secret:true,
+        icon:"🎭", name:"Caméléon de Thiercelieux",
+        desc:"Jouer tous les rôles disponibles au moins une fois",
+        pts:120, titreLabel:"🎭 Caméléon de Thiercelieux", titreBg:"#0a0a0a", titreFg:"#c9a44c", titreBorder:"#6a5a1a",
+        check: s => (s.secretCameleon||0) >= 1, progress: s => ({ cur: Math.min(s.secretCameleon||0,1), max:1 }) },
+    ];
+
+    let _stats = {};
+    let _completed = {};
+    let _activeTab = "all";
+
+    window.setTab = function(tab) {
+      _activeTab = tab;
+      ["all","village","loups","secret","done"].forEach(t => {
+        const b = document.getElementById("tab-" + t);
+        if (b) b.className = "tab-btn" + (t === tab ? " active" : "");
+      });
+      renderList();
+    };
+
+    function renderList() {
+      const list = OBJECTIFS.filter(o => {
+        if (_activeTab === "done")   return !!_completed[o.id];
+        if (_activeTab === "village") return o.cat === "village";
+        if (_activeTab === "loups")  return o.cat === "loups";
+        if (_activeTab === "secret") return o.cat === "secret";
+        return true;
+      });
+      const c = document.getElementById("obj-list");
+      if (!list.length) {
+        c.innerHTML = '<p style="color:#555;font-style:italic;text-align:center;padding:2rem">Aucun objectif dans cette catégorie.</p>';
+        return;
+      }
+
+      // grouper par catégorie si onglet "all"
+      let html = "";
+      if (_activeTab === "all") {
+        const cats = [
+          { key:"village", label:"🏘️ Objectifs Village" },
+          { key:"loups",   label:"🐺 Objectifs Loups" },
+          { key:"secret",  label:"❓ Objectifs Secrets" },
+        ];
+        cats.forEach(cat => {
+          const items = list.filter(o => o.cat === cat.key);
+          if (!items.length) return;
+          html += `<div class="section-title">${cat.label}</div>`;
+          items.forEach(o => { html += renderCard(o); });
+        });
+      } else {
+        list.forEach(o => { html += renderCard(o); });
+      }
+      c.innerHTML = html;
+
+      // animer les barres après rendu
+      setTimeout(() => {
+        OBJECTIFS.forEach(o => {
+          const bar = document.getElementById("pbar-" + o.id);
+          if (!bar) return;
+          const prog = o.progress(_stats);
+          bar.style.width = Math.round((prog.cur / prog.max) * 100) + "%";
+        });
+      }, 100);
+    }
+
+    function renderCard(o) {
+      const done = !!_completed[o.id];
+      const isSecretLocked = o.secret && !done;
+      const prog = o.progress(_stats);
+      const pct = Math.round((prog.cur / prog.max) * 100);
+
+      const displayName = isSecretLocked ? "Objectif secret" : o.name;
+      const displayDesc = isSecretLocked ? "Accomplis des actions spéciales pour le découvrir…" : o.desc;
+      const displayIcon = isSecretLocked ? "❓" : o.icon;
+
+      return `<div class="obj-card ${done ? "done" : ""} ${isSecretLocked ? "secret-locked" : ""}">
+        <div class="obj-icon">${displayIcon}</div>
+        <div class="obj-body">
+          <div class="obj-name" style="${isSecretLocked ? "color:#555" : ""}">${displayName}</div>
+          <div class="obj-desc">${displayDesc}</div>
+          ${!done ? `<div class="obj-progress">
+            <div class="obj-pbar-track"><div class="obj-pbar-fill" id="pbar-${o.id}" style="width:0%"></div></div>
+            <div class="obj-pbar-label">${isSecretLocked ? "???" : prog.cur + " / " + prog.max}</div>
+          </div>` : ""}
+        </div>
+        <div class="obj-right">
+          ${done
+            ? `<div class="done-stamp">✅ Complété</div>
+               <div class="obj-titre" style="background:${o.titreBg};color:${o.titreFg};border:0.5px solid ${o.titreBorder}">${o.titreLabel}</div>`
+            : `<div class="obj-pts">+${o.pts} pts</div>
+               <div class="obj-titre" style="background:#10131c;color:#555;border:0.5px solid #252d3a">${isSecretLocked ? "??? titre" : o.titreLabel}</div>`
+          }
+        </div>
+      </div>`;
+    }
+
+    function updateSummary() {
+      const done = OBJECTIFS.filter(o => _completed[o.id]).length;
+      const total = OBJECTIFS.length;
+      const pts = OBJECTIFS.filter(o => _completed[o.id]).reduce((a, o) => a + o.pts, 0);
+      document.getElementById("sb-done").textContent = done;
+      document.getElementById("sb-total").textContent = total;
+      document.getElementById("sb-pts").textContent = pts;
+      setTimeout(() => {
+        document.getElementById("global-bar").style.width = Math.round((done / total) * 100) + "%";
+      }, 200);
+    }
+
+    async function init() {
+      const snap = await get(ref(db, "users/" + me.id));
+      if (snap.exists()) {
+        const user = snap.val();
+        _stats = user.stats || {};
+        _completed = user.objectifs || {};
+      }
+      // Vérifier les objectifs non encore complétés
+      OBJECTIFS.forEach(o => {
+        if (!_completed[o.id] && o.check(_stats)) {
+          _completed[o.id] = true;
+        }
+      });
+      renderList();
+      updateSummary();
+    }
+
+    function showNotif(msg) {
+      const n = document.getElementById("notif");
+      n.textContent = msg;
+      n.style.display = "block";
+      setTimeout(() => n.style.display = "none", 3000);
+    }
+
+    init();
+  </script>
+</body>
+</html>
