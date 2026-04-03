@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Profil — Loup-Garou</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link rel="stylesheet" href="style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --accent: #c9a44c;
+      --highlight: #f2e5c6;
+      --bg: #080a10;
+      --card: #0e1118;
+      --border: #1e2535;
+    }
+
+    body { background: var(--bg); color: var(--highlight); margin: 0; font-family: Georgia, serif; }
+
+    /* ── TOP BAR ── */
+    .top-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 20px; background: rgba(0,0,0,0.6);
+      border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 50;
+      backdrop-filter: blur(12px);
+    }
+    .top-bar-left { font-size: 0.8rem; color: #888; }
+    .top-bar-right { display: flex; gap: 8px; }
+    .top-bar-btn {
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 8px; padding: 5px 12px; color: #aaa;
+      font-size: 0.78rem; cursor: pointer; transition: 0.15s; font-family: inherit;
+    }
+    .top-bar-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── HERO COMPACT ── */
+    .profil-hero {
+      display: flex; align-items: center; gap: 20px;
+      padding: 20px 24px; max-width: 900px; margin: 0 auto;
+    }
+    .avatar-circle {
+      width: 90px; height: 90px; border-radius: 50%;
+      border: 3px solid var(--accent); overflow: hidden; flex-shrink: 0;
+      background: #0b0e14; display: flex; align-items: center;
+      justify-content: center; font-size: 2.5rem;
+      box-shadow: 0 0 20px rgba(201,164,76,0.3);
+    }
+    .hero-info { flex: 1; }
+    .hero-name { font-family: Cinzel, serif; font-size: 1.5rem; font-weight: 700; margin: 0 0 4px; }
+    .hero-rang { font-size: 0.85rem; margin-bottom: 6px; }
+    .hero-since { font-size: 0.72rem; color: #555; font-style: italic; }
+    .hero-titre {
+      display: inline-block; font-family: Cinzel, serif; font-size: 0.75rem;
+      padding: 3px 12px; border-radius: 20px; border: 1px solid var(--accent);
+      color: var(--accent); margin-top: 6px;
+    }
+
+    /* ── ONGLETS ── */
+    .tabs-bar {
+      display: flex; gap: 0; border-bottom: 1px solid var(--border);
+      max-width: 900px; margin: 0 auto; padding: 0 24px;
+      overflow-x: auto; scrollbar-width: none;
+    }
+    .tab-btn {
+      background: none; border: none; color: #555; padding: 10px 18px;
+      font-size: 0.85rem; cursor: pointer; border-bottom: 2px solid transparent;
+      white-space: nowrap; font-family: inherit; transition: 0.15s;
+    }
+    .tab-btn:hover { color: #aaa; }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+    .tab-content { display: none; max-width: 900px; margin: 0 auto; padding: 20px 24px; }
+    .tab-content.active { display: block; }
+
+    /* ── STAT GRID ── */
+    .stat-mini-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px;
+    }
+    .stat-mini {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 10px; text-align: center;
+    }
+    .stat-mini .val { font-size: 1.3rem; font-weight: 700; font-family: Cinzel, serif; }
+    .stat-mini .lbl { font-size: 0.65rem; color: #555; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+    /* ── XP BAR ── */
+    .xp-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+    .xp-label { font-size: 0.72rem; color: #888; margin-bottom: 6px; display: flex; justify-content: space-between; }
+    .xp-track { background: #10131c; border-radius: 6px; height: 8px; overflow: hidden; border: 1px solid #252d3a; }
+    .xp-fill { height: 100%; border-radius: 6px; transition: width 0.6s; width: 0%; }
+
+    /* ── PERSONNAGES ── */
+    .char-layout { display: flex; gap: 16px; }
+    .char-preview-col { flex: 0 0 150px; }
+    .char-preview-img {
+      width: 150px; height: 210px; border-radius: 10px; overflow: hidden;
+      background: #0a0a14; border: 2px solid var(--accent);
+      box-shadow: 0 0 16px rgba(201,164,76,0.2); margin-bottom: 8px;
+    }
+    .char-preview-img img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+    .char-grid-col { flex: 1; min-width: 0; }
+    .char-section-label {
+      font-size: 10px; font-weight: 600; color: #666;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 6px; margin-top: 12px; display: flex; align-items: center; gap: 6px;
+    }
+    .char-section-label:first-child { margin-top: 0; }
+    .char-grid {
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 4px;
+    }
+    .char-thumb {
+      border-radius: 6px; overflow: hidden; cursor: pointer;
+      border: 2px solid transparent; transition: 0.15s;
+      background: #10131c; position: relative;
+    }
+    .char-thumb:hover { border-color: #666; }
+    .char-thumb.on { border-color: var(--accent); }
+    .char-thumb.locked { cursor: not-allowed; opacity: 0.45; filter: grayscale(0.7); }
+    .char-thumb.locked:hover { border-color: #333; }
+    .char-thumb img { width: 100%; height: 80px; object-fit: cover; object-position: top; display: block; }
+    .char-thumb-label { font-size: 8px; text-align: center; color: #777; padding: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: Cinzel, serif; }
+    .lock-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-60%); font-size: 1rem; pointer-events: none; }
+
+    /* ── FILTRES ── */
+    .filter-row { display: flex; gap: 5px; margin-bottom: 8px; }
+    .filter-btn { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 3px 12px; font-size: 11px; color: #888; cursor: pointer; transition: 0.15s; font-family: inherit; }
+    .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+
+    /* ── TITRES ── */
+    .titres-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .titre-item {
+      padding: 8px 10px; border-radius: 8px; background: #10131c;
+      border: 1px solid #252d3a; font-size: 0.72rem; text-align: center;
+      font-family: Cinzel, serif;
+    }
+    .titre-item.unlocked { background: #1a1400; }
+
+    /* ── RÔLES STATS ── */
+    .roles-list { display: flex; flex-direction: column; gap: 8px; }
+
+    /* ── PSEUDO ── */
+    .pseudo-row { display: flex; gap: 8px; margin-top: 12px; }
+    .pseudo-row input { flex: 1; background: #10131c; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--highlight); font-family: inherit; font-size: 0.88rem; }
+    .pseudo-row button { background: var(--accent); border: none; border-radius: 8px; padding: 8px 16px; color: #000; font-weight: 700; cursor: pointer; font-family: Cinzel, serif; font-size: 0.82rem; }
+
+    /* ── MODAL ── */
+    #char-modal {
+      display: none; position: fixed; inset: 0; z-index: 999;
+      background: rgba(0,0,0,0.88); align-items: center; justify-content: center;
+    }
+    .modal-inner {
+      background: #0e1118; border: 2px solid var(--accent); border-radius: 16px;
+      padding: 1.5rem; text-align: center; max-width: 300px; width: 90%;
+      box-shadow: 0 0 40px rgba(201,164,76,0.25);
+    }
+    .modal-inner img { width: 170px; height: 238px; object-fit: cover; object-position: top; border-radius: 10px; border: 2px solid var(--accent); display: block; margin: 0 auto 1rem; }
+    .modal-btns { display: flex; gap: 8px; justify-content: center; margin-top: 1rem; }
+    .btn-gold { background: var(--accent); border: none; border-radius: 8px; padding: 8px 16px; color: #000; font-weight: 700; cursor: pointer; font-family: Cinzel, serif; font-size: 0.82rem; }
+    .btn-sec { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; color: #888; cursor: pointer; font-family: inherit; font-size: 0.82rem; }
+
+    /* ── SECTION DIVIDER ── */
+    .section-sep { border: none; border-top: 1px solid var(--border); margin: 14px 0; position: relative; }
+    .section-sep-label {
+      position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
+      background: var(--bg); padding: 0 10px; font-size: 9px;
+      color: var(--accent); font-family: Cinzel, serif; white-space: nowrap;
+    }
+
+    @media (max-width: 600px) {
+      .stat-mini-grid { grid-template-columns: repeat(2, 1fr); }
+      .char-layout { flex-direction: column; }
+      .char-preview-col { flex: none; display: flex; gap: 12px; align-items: flex-end; }
+      .char-preview-img { width: 110px; height: 154px; }
+      .char-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="notif" id="notif"></div>
+
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <div class="top-bar-left">Connecté : <strong id="top-name"></strong></div>
+    <div class="top-bar-right">
+      <button class="top-bar-btn" onclick="window.location.href='accueil.html'">← Accueil</button>
+      <button class="top-bar-btn" onclick="window.location.href='objectifs.html'">🎯 Objectifs</button>
+      <button class="top-bar-btn" onclick="doLogout()">Déconnexion</button>
+    </div>
+  </div>
+
+  <!-- HERO COMPACT -->
+  <div class="profil-hero">
+    <div class="avatar-circle" id="avatar-display"></div>
+    <div class="hero-info">
+      <div class="hero-name" id="profil-name">—</div>
+      <div class="hero-rang" id="profil-badge"></div>
+      <div class="hero-since" id="profil-since"></div>
+      <div class="hero-titre" id="titre-display"></div>
+    </div>
+  </div>
+
+  <!-- ONGLETS -->
+  <div class="tabs-bar">
+    <button class="tab-btn active" onclick="switchTab('stats')">📊 Stats</button>
+    <button class="tab-btn" onclick="switchTab('perso')">🎨 Personnage</button>
+    <button class="tab-btn" onclick="switchTab('titres')">🏅 Titres</button>
+    <button class="tab-btn" onclick="switchTab('compte')">✏️ Compte</button>
+  </div>
+
+  <!-- ONGLET STATS -->
+  <div class="tab-content active" id="tab-stats">
+    <div class="stat-mini-grid">
+      <div class="stat-mini"><div class="val" id="st-games">0</div><div class="lbl">Parties</div></div>
+      <div class="stat-mini"><div class="val" style="color:#6dbe6d" id="st-wins">0</div><div class="lbl">Victoires</div></div>
+      <div class="stat-mini"><div class="val" style="color:#be6d6d" id="st-losses">0</div><div class="lbl">Défaites</div></div>
+      <div class="stat-mini"><div class="val" style="color:var(--accent)" id="st-rate">0%</div><div class="lbl">Win rate</div></div>
+      <div class="stat-mini"><div class="val" style="color:#be6d6d" id="st-wolves">0</div><div class="lbl">Loups tués</div></div>
+      <div class="stat-mini"><div class="val" style="color:var(--accent)" id="st-level">1</div><div class="lbl">Niveau</div></div>
+      <div class="stat-mini" style="grid-column:span 2"><div class="val" style="color:#c9a44c;font-size:1rem" id="st-rang">🌿 Villageois</div><div class="lbl">Rang · <span id="st-points" style="color:#c9a44c"></span></div></div>
+    </div>
+
+    <!-- XP -->
+    <div class="xp-wrap">
+      <div class="xp-label"><span>Expérience</span><span id="xp-current">0 XP</span></div>
+      <div class="xp-track"><div id="xp-bar" class="xp-fill" style="background:linear-gradient(90deg,var(--accent),#f2e5c6)"></div></div>
+      <div style="text-align:right;font-size:0.68rem;color:#444;margin-top:3px" id="xp-next"></div>
+    </div>
+
+    <!-- Rang -->
+    <div class="xp-wrap">
+      <div class="xp-label"><span>Progression de rang</span><span id="rang-next-label" style="color:#888;font-size:0.68rem"></span></div>
+      <div class="xp-track"><div id="rang-bar" class="xp-fill" style="background:linear-gradient(90deg,#8b3a3a,#c9a44c)"></div></div>
+    </div>
+
+    <!-- Rôles -->
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px">
+      <div style="font-size:0.78rem;color:#888;font-weight:600;margin-bottom:10px">🎭 Rôles les plus joués</div>
+      <div id="roles-stats" class="roles-list"></div>
+    </div>
+  </div>
+
+  <!-- ONGLET PERSONNAGE -->
+  <div class="tab-content" id="tab-perso">
+    <!-- Modal -->
+    <div id="char-modal" onclick="closeCharModal()">
+      <div class="modal-inner" onclick="event.stopPropagation()">
+        <img id="modal-img" src=""/>
+        <div id="modal-label" style="font-family:Cinzel,serif;color:var(--accent);font-size:0.95rem;font-weight:600;margin-bottom:4px"></div>
+        <div id="modal-hint" style="font-size:0.75rem;color:#888;font-style:italic"></div>
+        <div class="modal-btns">
+          <button class="btn-gold" id="modal-select-btn" onclick="confirmModalSelect()">✅ Choisir</button>
+          <button class="btn-sec" onclick="closeCharModal()">Fermer</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="char-layout">
+      <!-- Aperçu + save -->
+      <div class="char-preview-col">
+        <div class="char-preview-img"><img id="char-img" src="" style="width:100%;height:100%;object-fit:cover;object-position:top;display:block"/></div>
+        <div style="font-family:Cinzel,serif;color:var(--accent);font-size:0.75rem;text-align:center;margin-bottom:8px" id="char-label-display">Choisir…</div>
+        <button class="btn-gold" style="width:100%;padding:8px;font-size:0.8rem;border-radius:8px" onclick="saveCustomization()">💾 Sauvegarder</button>
+      </div>
+
+      <!-- Grille sélection -->
+      <div class="char-grid-col">
+        <!-- Filtres -->
+        <div class="filter-row">
+          <button class="filter-btn active" id="fg-all" onclick="filterG('all')">Tous</button>
+          <button class="filter-btn" id="fg-f" onclick="filterG('f')">Féminins</button>
+          <button class="filter-btn" id="fg-m" onclick="filterG('m')">Masculins</button>
+        </div>
+
+        <div class="char-section-label">👥 Personnages de base</div>
+        <div class="char-grid" id="char-select-grid"></div>
+
+        <hr class="section-sep" style="margin-top:14px"><span class="section-sep-label">⭐ Exclusifs — <span id="unlock-count"></span></span>
+        <div class="char-grid" id="exclusive-grid" style="margin-top:14px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ONGLET TITRES -->
+  <div class="tab-content" id="tab-titres">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px">
+      <div style="font-size:0.72rem;color:#888;margin-bottom:8px">Titre actuel</div>
+      <div style="font-family:Cinzel,serif;font-size:1.1rem;color:var(--accent);text-align:center;padding:10px;background:#10131c;border-radius:8px;border:1px solid var(--accent)" id="titre-display-tab"></div>
+    </div>
+    <div class="titres-grid" id="titres-list"></div>
+  </div>
+
+  <!-- ONGLET COMPTE -->
+  <div class="tab-content" id="tab-compte">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:12px">
+      <div style="font-size:0.82rem;color:#888;margin-bottom:8px;font-weight:600">✏️ Modifier le pseudo</div>
+      <div class="pseudo-row">
+        <input type="text" id="new-pseudo" placeholder="Nouveau pseudo..." maxlength="20"/>
+        <button onclick="savePseudo()">Sauvegarder</button>
+      </div>
+      <div class="error-msg" id="err-pseudo" style="font-size:0.75rem;color:#be4444;margin-top:6px"></div>
+    </div>
+    <div style="text-align:center;margin-top:1.5rem">
+      <button class="btn-sec" style="padding:10px 24px;border-radius:10px" onclick="window.location.href='objectifs.html'">🎯 Voir tous mes objectifs →</button>
+    </div>
+  </div>
+
+  <footer style="text-align:center;padding:1.5rem;color:#333;font-size:0.75rem;margin-top:1rem">© 2025 – Loup-Garou en Ligne</footer>
+
+  <script>
+    function switchTab(id) {
+      document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('tab-' + id).classList.add('active');
+    }
+    function filterG(f) {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('fg-' + f).classList.add('active');
+      window._filterG && window._filterG(f);
+    }
+  </script>
+
+<script type="module">
+      import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+      import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+      import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyBAAnZP5J_RsTF-puLIkloRT6pyS3TgtAM",
+        authDomain: "loup-garou-en-ligne-32f5b.firebaseapp.com",
+        databaseURL: "https://loup-garou-en-ligne-32f5b-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "loup-garou-en-ligne-32f5b",
+        storageBucket: "loup-garou-en-ligne-32f5b.firebasestorage.app",
+        messagingSenderId: "536792759140",
+        appId: "1:536792759140:web:aefc9cf5e0b271204b9871",
+      };
+      let app;
+      try { app = initializeApp(firebaseConfig); } catch (e) { app = getApp(); }
+      const db = getDatabase(app);
+      const auth = getAuth(app);
+      onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          localStorage.removeItem("lg_session_v2");
+          window.location.href = "connexion.html";
+        }
+      });
+
+      const SESSION_KEY = "lg_session_v2";
+      const session = localStorage.getItem(SESSION_KEY);
+      if (!session) window.location.href = "connexion.html";
+      let me = JSON.parse(session);
+      document.getElementById("top-name").textContent = me.name;
+
+      window.doLogout = function () {
+        localStorage.removeItem(SESSION_KEY);
+        window.location.href = "connexion.html";
+      };
+
+      // ── Personnages de base (tous débloqués) ─────────────────────────────────
+      const AVATAR_LIST = [
+        { id:"f_princesse_custom",        label:"Princesse",     gender:"f", src:"https://i.postimg.cc/fLcC7fNR/IMG-0917.jpg" },
+        { id:"f_princesse_noire_custom",  label:"Pr. Obscure",   gender:"f", src:"https://i.postimg.cc/bJxg09hy/IMG-0918.jpg" },
+        { id:"f_sorciere_custom",         label:"Sorcière",      gender:"f", src:"https://i.postimg.cc/fLcC7fNY/IMG-0909.jpg" },
+        { id:"f_sorciere_noire_custom",   label:"Sr. Ténèbres",  gender:"f", src:"https://i.postimg.cc/zBC7wFrH/IMG-0910.jpg" },
+        { id:"f_voyante_custom",          label:"Voyante",       gender:"f", src:"https://i.postimg.cc/Y96RNzH9/f-voyante.jpg" },
+        { id:"f_voyante_noire_custom",    label:"Vt. Obscure",   gender:"f", src:"https://i.postimg.cc/1tGB0rQz/IMG-0913.jpg" },
+        { id:"f_noble_custom",            label:"Dame Noble",    gender:"f", src:"https://i.postimg.cc/1tGB0rQp/IMG-0907.jpg" },
+        { id:"f_noble_noire_custom",      label:"Dame Sombre",   gender:"f", src:"https://i.postimg.cc/Ss6dLfhC/IMG-0908.jpg" },
+        { id:"f_chevaliere_custom",       label:"Chevalière",    gender:"f", src:"https://i.postimg.cc/NM6D8kc7/IMG-0904.jpg" },
+        { id:"f_chevaliere_noire_custom", label:"Chev. Noire",   gender:"f", src:"https://i.postimg.cc/cHRh7BSB/IMG-0903.jpg" },
+        { id:"f_archere_custom",          label:"Archère",       gender:"f", src:"https://i.postimg.cc/rpNsTDGg/IMG-0940.jpg" },
+        { id:"f_archere_noire_custom",    label:"Arc. Ombre",    gender:"f", src:"https://i.postimg.cc/mryk4P3y/IMG-0941.jpg" },
+        { id:"m_prince_custom",           label:"Prince",        gender:"m", src:"https://i.postimg.cc/qRswcxTM/IMG-0915.jpg" },
+        { id:"m_prince_noir_custom",      label:"Pr. Obscur",    gender:"m", src:"https://i.postimg.cc/C1G7CsgZ/IMG-0916.jpg" },
+        { id:"m_sorcier_custom",          label:"Sorcier",       gender:"m", src:"https://i.postimg.cc/26QGd7Dd/IMG-0905.jpg" },
+        { id:"m_sorcier_noir_custom",     label:"Sr. Ténèbres",  gender:"m", src:"https://i.postimg.cc/85R4dmSR/IMG-0906.jpg" },
+        { id:"m_voyant_custom",           label:"Voyant",        gender:"m", src:"https://i.postimg.cc/rm1jGNkt/IMG-0911.jpg" },
+        { id:"m_voyant_noir_custom",      label:"Vt. Obscur",    gender:"m", src:"https://i.postimg.cc/DZr6QPTJ/IMG-0912.jpg" },
+        { id:"m_noble_v2_custom",         label:"Seigneur",      gender:"m", src:"https://i.postimg.cc/cJSCPR3j/IMG-0938.jpg" },
+        { id:"m_noble_noir_custom",       label:"Sr. Sombre",    gender:"m", src:"https://i.postimg.cc/CKs50RC7/IMG-0939.jpg" },
+        { id:"m_chevalier_custom",        label:"Chevalier",     gender:"m", src:"https://i.postimg.cc/fLcC7fNv/IMG-0902.jpg" },
+        { id:"m_chevalier_noir_custom",   label:"Chev. Noir",    gender:"m", src:"https://i.postimg.cc/VvzRK0f0/IMG-0901.jpg" },
+        { id:"m_archer_custom",           label:"Archer",        gender:"m", src:"https://i.postimg.cc/fyMK8Sz0/m-archer.jpg" },
+        { id:"m_archer_noir_custom",      label:"Arc. Ombre",    gender:"m", src:"https://i.postimg.cc/D07gx4vJ/IMG-0900.jpg" },
+      ];
+
+      // ── Personnages exclusifs à débloquer ────────────────────────────────────
+      // condition: fonction qui reçoit (stats, objectifs, points) → true si débloqué
+      const EXCLUSIVE_LIST = [
+        {
+          id: "ex_alpha_loups",
+          label: "Alpha des Loups",
+          src: "https://i.postimg.cc/5XGP2vWB/alpha-des-loups.jpg",
+          objId: "l_alpha",
+          hint: "Objectif : 10 victoires en Loup",
+          condition: (s, obj) => obj["l_alpha"] === true,
+        },
+        {
+          id: "ex_grande_voyante",
+          label: "Grande Voyante",
+          src: "https://i.postimg.cc/0z3tym1Z/grande-voyante.jpg",
+          objId: "v_oracle",
+          hint: "Objectif : 3 victoires en Voyante",
+          condition: (s, obj) => obj["v_oracle"] === true,
+        },
+        {
+          id: "ex_chasseur_ombre",
+          label: "Chasseur de l'Ombre",
+          src: "https://i.postimg.cc/QFP6d5Z1/chasseur-de-lombre.jpg",
+          objId: "v_traqueur",
+          hint: "Objectif : 3 victoires en Chasseur",
+          condition: (s, obj) => obj["v_traqueur"] === true,
+        },
+        {
+          id: "ex_loup_maudit",
+          label: "Loup-Garou Maudit",
+          src: "https://i.postimg.cc/1gqvntyr/loup-garou-maudit.jpg",
+          objId: "v_alchimiste",
+          hint: "Objectif : 3 victoires en Sorcière",
+          condition: (s, obj) => obj["v_alchimiste"] === true,
+        },
+        {
+          id: "ex_chevalier_lune",
+          label: "Chevalier Pleine Lune",
+          src: "https://i.postimg.cc/PCc65Znm/chevalier-de-la-pleine-lune.jpg",
+          objId: "v_gardien",
+          hint: "Objectif : Bouclier du Peuple",
+          condition: (s, obj) => obj["v_gardien"] === true,
+        },
+        {
+          id: "ex_loup_fantome",
+          label: "Loup Fantôme",
+          src: "https://i.postimg.cc/t1xBZT9t/loup-fantome.jpg",
+          objId: "l_solitaire",
+          hint: "Objectif : Solitaire Absolu",
+          condition: (s, obj) => obj["l_solitaire"] === true,
+        },
+        {
+          id: "ex_ange_dechu",
+          label: "Ange Déchu",
+          src: "https://i.postimg.cc/v4jPZ9w7/ange-dechu.jpg",
+          objId: "s_ange",
+          hint: "Objectif secret : Gagner en Ange",
+          condition: (s, obj) => obj["s_ange"] === true,
+        },
+        {
+          id: "ex_amoureux_maudits",
+          label: "Amoureux Maudits",
+          src: "https://i.postimg.cc/gwZgXJGy/les-amoureux-maudits.jpg",
+          objId: "s_amour_maudit",
+          hint: "Objectif secret : Amour Maudit",
+          condition: (s, obj) => obj["s_amour_maudit"] === true,
+        },
+        {
+          id: "ex_flute_maudit",
+          label: "Joueur de Flûte Maudit",
+          src: "https://i.postimg.cc/06wVMQ9w/joueur-de-flute-maudit.jpg",
+          objId: "s_flute",
+          hint: "Objectif secret : Gagner en Joueur de Flûte",
+          condition: (s, obj) => obj["s_flute"] === true,
+        },
+        {
+          id: "ex_cameleon",
+          label: "Le Caméléon",
+          src: "https://i.postimg.cc/FYqPHcXp/le-cameleon.jpg",
+          objId: "s_cameleon",
+          hint: "Objectif secret : Tous les rôles joués",
+          condition: (s, obj) => obj["s_cameleon"] === true,
+        },
+        {
+          id: "ex_dernier_juste",
+          label: "Dernier des Justes",
+          src: "https://i.postimg.cc/06wVMQ9S/le-dernier-des-justes.jpg",
+          objId: "s_dernier",
+          hint: "Objectif secret : Dernier villageois survivant",
+          condition: (s, obj) => obj["s_dernier"] === true,
+        },
+        {
+          id: "ex_rang_gardien",
+          label: "Rang Gardien",
+          src: "https://i.postimg.cc/947LRMc1/rang-gardien.jpg",
+          hint: "Atteindre le rang 🧙 Gardien (150 pts)",
+          condition: (s, obj, pts) => pts >= 150,
+        },
+        {
+          id: "ex_rang_ancien",
+          label: "Rang Ancien",
+          src: "https://i.postimg.cc/1gqvntyK/rang-ancien.jpg",
+          hint: "Atteindre le rang 🧝 Ancien (500 pts)",
+          condition: (s, obj, pts) => pts >= 500,
+        },
+        {
+          id: "ex_rang_legendaire",
+          label: "Rang Légendaire",
+          src: "https://i.postimg.cc/XZCsGJnL/rang-legendaire.jpg",
+          hint: "Atteindre le rang 🐺 Légendaire (1200 pts)",
+          condition: (s, obj, pts) => pts >= 1200,
+        },
+      ];
+
+      let CUST = { charId: null, charSrc: null, charLabel: null };
+      let gFilter = "all";
+      let _userObjectifs = {};
+      let _userStats = {};
+      let _userPoints = 0;
+      let _modalPending = null;
+
+      // ── Modal prévisualisation ─────────────────────────────────────────────
+      function openCharModal(id, src, label, hint, locked) {
+        const modal = document.getElementById("char-modal");
+        document.getElementById("modal-img").src = src;
+        document.getElementById("modal-label").textContent = label;
+        const hintEl = document.getElementById("modal-hint");
+        hintEl.textContent = hint || "";
+        const btn = document.getElementById("modal-select-btn");
+        if (locked) {
+          btn.style.display = "none";
+          hintEl.style.color = "#be4444";
+        } else {
+          btn.style.display = "inline-flex";
+          hintEl.style.color = "#888";
+          _modalPending = { id, src, label };
+        }
+        modal.style.display = "flex";
+      }
+
+      window.closeCharModal = function () {
+        document.getElementById("char-modal").style.display = "none";
+        _modalPending = null;
+      };
+
+      window.confirmModalSelect = function () {
+        if (!_modalPending) return;
+        const { id, src, label } = _modalPending;
+        CUST.charId = id;
+        CUST.charSrc = src;
+        CUST.charLabel = label;
+        document.getElementById("char-img").src = src;
+        document.getElementById("char-label-display").textContent = label;
+        renderCharGrid();
+        renderExclusiveGrid();
+        closeCharModal();
+      };
+
+      window._filterG = function (f) {
+        gFilter = f;
+        renderCharGrid();
+      };
+      window.filterG = window._filterG;
+
+      function renderCharGrid() {
+        const list = AVATAR_LIST.filter(a => gFilter === "all" || a.gender === gFilter);
+        const c = document.getElementById("char-select-grid");
+        if (!c) return;
+        c.innerHTML = list.map(a => `
+          <div class="char-thumb ${CUST.charId === a.id ? "on" : ""}"
+            onclick="selectChar('${a.id}','${a.src}','${a.label}')"
+            title="${a.label}">
+            <img src="${a.src}" onerror="this.style.display='none'"/>
+            <div class="char-thumb-label">${a.label}</div>
+          </div>`
+        ).join("");
+      }
+
+      window.selectChar = function (id, src, label) {
+        CUST.charId = id;
+        CUST.charSrc = src;
+        CUST.charLabel = label;
+        document.getElementById("char-img").src = src;
+        document.getElementById("char-label-display").textContent = label;
+        renderCharGrid();
+        renderExclusiveGrid();
+      };
+
+      function renderExclusiveGrid() {
+        const c = document.getElementById("exclusive-grid");
+        if (!c) return;
+        const unlocked = EXCLUSIVE_LIST.filter(e =>
+          e.condition(_userStats, _userObjectifs, _userPoints)
+        );
+        const locked = EXCLUSIVE_LIST.filter(e =>
+          !e.condition(_userStats, _userObjectifs, _userPoints)
+        );
+        const countEl = document.getElementById("unlock-count");
+        if (countEl) countEl.textContent = `${unlocked.length}/${EXCLUSIVE_LIST.length} débloqués`;
+        const sorted = [...unlocked, ...locked];
+        c.innerHTML = sorted.map(e => {
+          const isUnlocked = e.condition(_userStats, _userObjectifs, _userPoints);
+          const isSelected = CUST.charId === e.id;
+          const shortLabel = e.label.split(" ").slice(0,2).join(" ");
+          if (isUnlocked) {
+            return `<div class="char-thumb ${isSelected ? "on" : ""}"
+              onclick="selectChar('${e.id}','${e.src}','${e.label}')"
+              title="${e.label}">
+              <img src="${e.src}" onerror="this.style.display='none'"/>
+              <div class="char-thumb-label" style="color:#c9a44c">⭐ ${shortLabel}</div>
+              ${isSelected ? '<div class="unlock-badge">✓</div>' : ''}
+            </div>`;
+          } else {
+            return `<div class="char-thumb locked"
+              onclick="openCharModal('${e.id}','${e.src}','${e.label}','🔒 ${e.hint}',true)"
+              title="🔒 ${e.hint}">
+              <img src="${e.src}" onerror="this.style.display='none'"/>
+              <div class="lock-icon">🔒</div>
+              <div class="char-thumb-label">${shortLabel}</div>
+            </div>`;
+          }
+        }).join("");
+      }
+
+      window.saveCustomization = async function () {
+        me.selectedAvatar = CUST.charId;
+        me.avatarUrl = CUST.charSrc;
+        me.avatarLabel = CUST.charLabel;
+        me.customization = { ...CUST };
+        try {
+          await update(ref(db, "users/" + me.id), {
+            avatarUrl: CUST.charSrc,
+            selectedAvatar: CUST.charId,
+            avatarLabel: CUST.charLabel,
+            customization: { ...CUST },
+          });
+          localStorage.setItem(SESSION_KEY, JSON.stringify(me));
+          renderAvatarDisplay();
+          showNotif("✅ Personnage sauvegardé !");
+        } catch (e) {
+          showNotif("Erreur sauvegarde.");
+        }
+      };
+
+      function renderAvatarDisplay() {
+        const el = document.getElementById("avatar-display");
+        if (!el) return;
+        if (me.avatarUrl) {
+          el.innerHTML = `<img src="${me.avatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top">`;
+        } else {
+          el.innerHTML = `<span style="font-size:3.5rem">${me.name[0].toUpperCase()}</span>`;
+        }
+      }
+
+      function initCustomizer() {
+        renderCharGrid();
+        if (me.customization) {
+          Object.assign(CUST, me.customization);
+          if (CUST.charSrc) {
+            document.getElementById("char-img").src = CUST.charSrc;
+            document.getElementById("char-label-display").textContent = CUST.charLabel || "";
+          }
+          renderCharGrid();
+        }
+        renderExclusiveGrid();
+      }
+
+      const RANGS = [
+        { min: 0,    label: "🌿 Villageois", color: "#888",    next: 150  },
+        { min: 150,  label: "🧙 Gardien",    color: "#6db4ff", next: 500  },
+        { min: 500,  label: "🧝 Ancien",     color: "#c9a44c", next: 1200 },
+        { min: 1200, label: "🐺 Légendaire", color: "#be6d6d", next: null },
+      ];
+      function getRang(points) {
+        let r = RANGS[0];
+        RANGS.forEach(x => { if (points >= x.min) r = x; });
+        return r;
+      }
+      function getRangPct(points) {
+        const idx = RANGS.findIndex(x => points < (x.next || Infinity));
+        const r = idx >= 0 ? RANGS[idx] : RANGS[RANGS.length - 1];
+        if (!r.next) return 100;
+        const base = idx > 0 ? RANGS[idx - 1].min : 0;
+        return Math.min(100, Math.round(((points - base) / (r.next - base)) * 100));
+      }
+
+      const TITRES = [
+        { min: 0,   label: "🌱 Novice du Village",       color: "#888"    },
+        { min: 3,   label: "🐾 Habitant Méfiant",        color: "#6db4ff" },
+        { min: 7,   label: "🗡️ Chasseur de Loups",       color: "#6dbe6d" },
+        { min: 15,  label: "🔮 Gardien du Secret",       color: "#c9a44c" },
+        { min: 30,  label: "🐺 Meneur de Meute",         color: "#be6d6d" },
+        { min: 50,  label: "🌕 Maître de la Nuit",       color: "#f2e5c6" },
+        { min: 100, label: "👑 Légende de Thiercelieux", color: "#c9a44c" },
+      ];
+      function getTitre(games) {
+        let t = TITRES[0];
+        TITRES.forEach(x => { if (games >= x.min) t = x; });
+        return t;
+      }
+      function getLevel(games) { return Math.floor(games / 5) + 1; }
+      function getXP(games) {
+        const tot = games * 20, lvl = 100;
+        return { current: tot % lvl, next: lvl, pct: Math.round(((tot % lvl) / lvl) * 100) };
+      }
+
+      window.savePseudo = async function () {
+        const name = document.getElementById("new-pseudo").value.trim();
+        const err = document.getElementById("err-pseudo");
+        if (!name) { err.textContent = "Entrez un pseudo."; return; }
+        if (name.length < 2) { err.textContent = "Pseudo trop court."; return; }
+        if (name.length > 20) { err.textContent = "Pseudo trop long."; return; }
+        err.textContent = "";
+        try {
+          await update(ref(db, "users/" + me.id), { name });
+          me.name = name;
+          localStorage.setItem(SESSION_KEY, JSON.stringify(me));
+          document.getElementById("profil-name").textContent = name;
+          document.getElementById("top-name").textContent = name;
+          document.getElementById("new-pseudo").value = "";
+          showNotif("Pseudo mis à jour !");
+        } catch (e) { err.textContent = "Erreur."; }
+      };
+
+      function renderStats(s) {
+        s = s || { games: 0, wins: 0, wolvesKilled: 0, points: 0 };
+        const losses = Math.max(0, s.games - s.wins);
+        const rate = s.games > 0 ? Math.round((s.wins / s.games) * 100) : 0;
+        const level = getLevel(s.games);
+        const xp = getXP(s.games);
+        const titre = getTitre(s.games);
+        const points = s.points || 0;
+        const rang = getRang(points);
+        const rangPct = getRangPct(points);
+
+        // Mettre à jour les variables globales pour les exclusifs
+        _userStats = s;
+        _userPoints = points;
+
+        document.getElementById("st-games").textContent = s.games;
+        document.getElementById("st-wins").textContent = s.wins;
+        document.getElementById("st-losses").textContent = losses;
+        document.getElementById("st-wolves").textContent = s.wolvesKilled || 0;
+        document.getElementById("st-rate").textContent = rate + "%";
+        document.getElementById("st-level").textContent = level;
+        document.getElementById("st-points").textContent = points + " pts";
+        document.getElementById("st-rang").textContent = rang.label;
+        document.getElementById("st-rang").style.color = rang.color;
+
+        document.getElementById("xp-current").textContent = xp.current + " XP";
+        document.getElementById("xp-next").textContent = xp.next + " XP pour niveau " + (level + 1);
+        setTimeout(() => { document.getElementById("xp-bar").style.width = xp.pct + "%"; }, 300);
+        setTimeout(() => {
+          const rb = document.getElementById("rang-bar");
+          if (rb) rb.style.width = rangPct + "%";
+        }, 300);
+
+        const nextRang = RANGS.find(r => r.min > points);
+        const rangNextEl = document.getElementById("rang-next-label");
+        if (rangNextEl) {
+          rangNextEl.textContent = nextRang
+            ? `${points} / ${nextRang.min} pts → ${nextRang.label}`
+            : "Rang maximum atteint !";
+        }
+
+        document.getElementById("profil-name").textContent = me.name;
+        document.getElementById("profil-badge").innerHTML =
+          `<span style="font-family:'Cinzel',serif;color:${rang.color};font-size:0.9rem">${rang.label}</span>`;
+        document.getElementById("titre-display").textContent = titre.label;
+        document.getElementById("profil-since").textContent =
+          "Membre depuis le " + new Date(me.created || Date.now()).toLocaleDateString("fr-FR");
+        renderTitresList(s.games);
+        renderRolesStats(s);
+
+        // Mettre à jour la grille des exclusifs avec les nouvelles stats
+        renderExclusiveGrid();
+      }
+
+      function renderTitresList(games) {
+        const titreTab = document.getElementById("titre-display-tab");
+        if (titreTab) titreTab.textContent = getTitre(games).label;
+
+        const c = document.getElementById("titres-list");
+        c.innerHTML = TITRES.map((t) => {
+          const ok = games >= t.min;
+          return `<div style="padding:6px 10px;border-radius:8px;background:${
+            ok ? "#1a1a00" : "#10131c"
+          };border:1px solid ${ok ? t.color : "#252d3a"};font-size:0.72rem;color:${
+            ok ? t.color : "#444"
+          };text-align:center;font-family:'Cinzel',serif">
+            ${ok ? "" : "🔒 "}${t.label}
+            ${!ok ? `<div style="color:#333;font-size:0.65rem;margin-top:2px">${t.min} parties</div>` : ""}
+          </div>`;
+        }).join("");
+      }
+
+      function renderRolesStats(s) {
+        const roles = s.rolesPlayed || { Villageois: 3, "Loup-Garou": 2, Voyante: 1 };
+        const total = Object.values(roles).reduce((a, b) => a + b, 0) || 1;
+        const icons = {
+          Villageois: "👨‍🌾", "Loup-Garou": "🐺", Voyante: "🔮",
+          Sorciere: "🧙‍♀️", Chasseur: "🏹", Salvateur: "🛡️",
+        };
+        const c = document.getElementById("roles-stats");
+        const sorted = Object.entries(roles).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        if (!sorted.length) {
+          c.innerHTML = '<p style="color:#555;font-style:italic;font-size:0.85rem">Aucune partie jouée.</p>';
+          return;
+        }
+        c.innerHTML = sorted.map(([role, count]) => {
+          const pct = Math.round((count / total) * 100);
+          return `<div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:1.2rem;min-width:28px">${icons[role] || "🎭"}</span>
+            <div style="flex:1">
+              <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:3px">
+                <span>${role}</span><span style="color:var(--accent)">${count} fois</span>
+              </div>
+              <div style="background:#10131c;border-radius:4px;height:6px">
+                <div style="width:${pct}%;height:100%;background:var(--accent);border-radius:4px;transition:width 0.5s"></div>
+              </div>
+            </div>
+          </div>`;
+        }).join("");
+      }
+
+      function showNotif(msg) {
+        const n = document.getElementById("notif");
+        n.textContent = msg;
+        n.style.display = "block";
+        setTimeout(() => (n.style.display = "none"), 3500);
+      }
+
+      // ── INIT depuis Firebase ──────────────────────────────────────────────────
+      async function init() {
+        const snap = await get(ref(db, "users/" + me.id));
+        if (snap.exists()) {
+          const user = snap.val();
+          me = { ...me, ...user };
+          _userObjectifs = user.objectifs || {};
+          localStorage.setItem(SESSION_KEY, JSON.stringify(me));
+        }
+        _userStats = me.stats || {};
+        _userPoints = (_userStats.points) || 0;
+        renderAvatarDisplay();
+        initCustomizer();
+        renderStats(me.stats);
+      }
+
+      init();
+    </script>
+</body>
+</html>
