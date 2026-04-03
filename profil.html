@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Profil — Loup-Garou</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .char-thumb {
+        border-radius: 8px;
+        overflow: hidden;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: 0.15s;
+        background: #10131c;
+        position: relative;
+      }
+      .char-thumb:hover { border-color: #888; }
+      .char-thumb.on { border-color: #c9a44c; }
+      .char-thumb.locked {
+        cursor: not-allowed;
+        opacity: 0.5;
+        filter: grayscale(0.8);
+      }
+      .char-thumb.locked:hover { border-color: #444; }
+      .char-thumb img {
+        width: 100%;
+        height: 88px;
+        object-fit: cover;
+        object-position: top;
+        display: block;
+      }
+      .char-thumb-label {
+        font-size: 10px;
+        text-align: center;
+        color: #aaa;
+        padding: 3px 2px;
+        font-family: "Cinzel", serif;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .lock-icon {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -60%);
+        font-size: 1.4rem;
+        pointer-events: none;
+      }
+      .unlock-badge {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        background: #c9a44c;
+        color: #000;
+        border-radius: 50%;
+        width: 16px;
+        height: 16px;
+        font-size: 0.55rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        pointer-events: none;
+      }
+      /* Section personnages exclusifs */
+      .exclusive-section {
+        margin-top: 12px;
+        padding-top: 10px;
+        border-top: 1px solid #252d3a;
+      }
+      .exclusive-label {
+        font-size: 10px;
+        font-weight: 500;
+        color: #c9a44c;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+    </style>
+  </head>
+  <body style="position: relative">
+    <div class="notif" id="notif"></div>
+
+    <div class="user-bar">
+      <span>Connecté : <strong id="top-name"></strong></span>
+      <button class="btn secondary" style="padding: 0.5rem 1rem; font-size: 0.82rem"
+        onclick="window.location.href='accueil.html'">← Accueil</button>
+      <button class="btn secondary" style="padding: 0.5rem 1rem; font-size: 0.82rem"
+        onclick="window.location.href='objectifs.html'">🎯 Objectifs</button>
+      <button class="btn secondary" style="padding: 0.5rem 1rem; font-size: 0.82rem"
+        onclick="doLogout()">Déconnexion</button>
+    </div>
+
+    <div class="hero" style="min-height: 18vh">
+      <div>
+        <h1>Mon Profil</h1>
+        <p style="font-size: 1rem">Personnalisez votre identité dans le village</p>
+      </div>
+    </div>
+
+    <div style="max-width: 960px; margin: 1rem auto; padding: 0 1rem">
+      <div style="display: flex; flex-wrap: wrap; gap: 1.5rem">
+
+        <!-- COLONNE GAUCHE -->
+        <div style="flex: 1; min-width: 280px">
+          <div class="card glow" style="text-align: center; padding: 1.2rem">
+            <div id="avatar-display" style="
+              width: 110px; height: 110px; border-radius: 50%;
+              margin: 0 auto 1rem; border: 3px solid var(--accent);
+              overflow: hidden; display: flex; align-items: center;
+              justify-content: center; font-size: 3rem; background: #0b0e14;
+            "></div>
+            <h2 id="profil-name" style="font-size: 1.5rem; margin-bottom: 0.3rem">—</h2>
+            <div id="profil-badge" style="margin-bottom: 0.5rem"></div>
+            <p id="profil-since" style="font-size: 0.78rem; color: #666; font-style: italic"></p>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-bottom: 1rem">🏅 Votre titre</h3>
+            <div id="titre-display" style="
+              padding: 0.75rem 1rem; border-radius: 10px;
+              background: #10131c; border: 1px solid var(--accent);
+              text-align: center; font-family: 'Cinzel', serif;
+              color: var(--accent); font-size: 1rem; margin-bottom: 0.75rem;
+            "></div>
+            <p style="font-size: 0.78rem; color: #666; font-style: italic; text-align: center;">
+              Votre titre évolue selon vos performances
+            </p>
+            <div id="titres-list" style="
+              margin-top: 1rem; display: grid;
+              grid-template-columns: 1fr 1fr 1fr; gap: 6px;
+            "></div>
+          </div>
+        </div>
+
+        <!-- COLONNE DROITE -->
+        <div style="flex: 2; min-width: 300px">
+          <!-- MODAL PRÉVISUALISATION -->
+          <div id="char-modal" onclick="closeCharModal()" style="
+            display:none;position:fixed;inset:0;z-index:999;
+            background:rgba(0,0,0,0.88);align-items:center;justify-content:center;
+          ">
+            <div onclick="event.stopPropagation()" style="
+              background:#0e1118;border:2px solid var(--accent);border-radius:20px;
+              padding:1.5rem;text-align:center;max-width:320px;width:90%;
+              box-shadow:0 0 40px rgba(201,164,76,0.3);
+            ">
+              <img id="modal-img" src="" style="
+                width:200px;height:280px;object-fit:cover;object-position:top;
+                border-radius:14px;border:2px solid var(--accent);display:block;margin:0 auto 1rem;
+              "/>
+              <div id="modal-label" style="
+                font-family:'Cinzel',serif;color:var(--accent);
+                font-size:1rem;font-weight:600;margin-bottom:0.3rem;
+              "></div>
+              <div id="modal-hint" style="font-size:0.75rem;color:#888;font-style:italic;margin-bottom:1rem"></div>
+              <div style="display:flex;gap:8px;justify-content:center">
+                <button class="btn" id="modal-select-btn" onclick="confirmModalSelect()" style="font-size:0.85rem">
+                  ✅ Choisir ce personnage
+                </button>
+                <button class="btn secondary" onclick="closeCharModal()" style="font-size:0.85rem">Fermer</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="border-color: var(--accent)">
+            <h3 style="margin-bottom: 1rem; color: var(--accent)">🎨 Choisir mon personnage</h3>
+            <div style="display: flex; gap: 16px; flex-wrap: wrap">
+
+              <!-- APERÇU -->
+              <div style="flex: 0 0 150px; text-align: center">
+                <div style="
+                  width: 150px; height: 210px; border-radius: 12px;
+                  overflow: hidden; background: #0a0a14;
+                  border: 2px solid var(--accent); margin: 0 auto;
+                  box-shadow: 0 0 20px rgba(201,164,76,0.25);
+                ">
+                  <img id="char-img" src="" style="width:150px;height:210px;object-fit:cover;object-position:top;display:block;"/>
+                </div>
+                <div style="margin-top:8px;font-family:'Cinzel',serif;color:var(--accent);font-size:0.82rem;font-weight:600"
+                  id="char-label-display">Choisir un personnage</div>
+                <button class="btn full" style="margin-top:10px;font-size:12px" onclick="saveCustomization()">💾 Sauvegarder</button>
+              </div>
+
+              <!-- SÉLECTION -->
+              <div style="flex: 1; min-width: 220px">
+
+                <!-- Filtres + label -->
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+                  <div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.07em">👥 Personnages de base</div>
+                  <div style="display:flex;gap:5px">
+                    <button class="btn" id="fg-all" onclick="filterG('all')" style="padding:2px 10px;font-size:11px">Tous</button>
+                    <button class="btn secondary" id="fg-f" onclick="filterG('f')" style="padding:2px 10px;font-size:11px">Féminins</button>
+                    <button class="btn secondary" id="fg-m" onclick="filterG('m')" style="padding:2px 10px;font-size:11px">Masculins</button>
+                  </div>
+                </div>
+
+                <!-- Grille base -->
+                <div id="char-select-grid" style="
+                  display:grid;grid-template-columns:repeat(5,1fr);
+                  gap:5px;margin-bottom:10px;
+                "></div>
+
+                <!-- Séparateur exclusifs -->
+                <div style="border-top:1px solid #252d3a;margin-bottom:12px;position:relative">
+                  <span style="
+                    position:absolute;top:-9px;left:50%;transform:translateX(-50%);
+                    background:#0e1118;padding:0 10px;font-size:10px;
+                    color:#c9a44c;font-family:'Cinzel',serif;white-space:nowrap;
+                  ">⭐ Exclusifs — <span id="unlock-count" style="color:#666;font-size:9px;font-family:sans-serif"></span></span>
+                </div>
+
+                <!-- Grille exclusifs -->
+                <div id="exclusive-grid" style="
+                  display:grid;grid-template-columns:repeat(5,1fr);
+                  gap:5px;
+                "></div>
+
+              </div>
+            </div>
+          </div>
+
+          <!-- PSEUDO -->
+          <div class="card">
+            <h3 style="margin-bottom: 1rem">✏️ Modifier le pseudo</h3>
+            <input type="text" id="new-pseudo" placeholder="Nouveau pseudo..." />
+            <div class="error-msg" id="err-pseudo"></div>
+            <button class="btn full" onclick="savePseudo()">Sauvegarder le pseudo</button>
+          </div>
+
+          <!-- STATS -->
+          <div class="card">
+            <h3 style="margin-bottom: 1rem">📊 Statistiques détaillées</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 1rem;">
+              <div class="stat-card">
+                <div class="label">Parties jouées</div>
+                <div class="value" id="st-games">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="label">Victoires</div>
+                <div class="value" style="color: #6dbe6d" id="st-wins">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="label">Défaites</div>
+                <div class="value" style="color: #be6d6d" id="st-losses">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="label">Loups tués</div>
+                <div class="value" style="color: #be6d6d" id="st-wolves">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="label">Taux de victoire</div>
+                <div class="value" style="color: var(--accent)" id="st-rate">0%</div>
+              </div>
+              <div class="stat-card">
+                <div class="label">Niveau</div>
+                <div class="value" style="color: var(--accent)" id="st-level">1</div>
+              </div>
+              <div class="stat-card">
+                <div class="label">Points totaux</div>
+                <div class="value" style="color: #c9a44c" id="st-points">0 pts</div>
+              </div>
+              <div class="stat-card" style="grid-column: span 3">
+                <div class="label">Rang</div>
+                <div class="value" style="font-size:1rem" id="st-rang">🌿 Villageois</div>
+              </div>
+            </div>
+            <p style="font-size: 0.78rem; color: #888; margin-bottom: 6px">Expérience :</p>
+            <div style="background: #10131c; border-radius: 10px; height: 12px; overflow: hidden; border: 1px solid #252d3a;">
+              <div id="xp-bar" style="height: 100%; background: linear-gradient(90deg, var(--accent), #f2e5c6); border-radius: 10px; transition: width 0.5s; width: 0%;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #666; margin-top: 4px;">
+              <span id="xp-current">0 XP</span>
+              <span id="xp-next">100 XP pour niveau 2</span>
+            </div>
+            <p style="font-size: 0.78rem; color: #888; margin: 1rem 0 6px">Progression de rang :</p>
+            <div style="background: #10131c; border-radius: 10px; height: 12px; overflow: hidden; border: 1px solid #252d3a;">
+              <div id="rang-bar" style="height: 100%; background: linear-gradient(90deg, #8b3a3a, #c9a44c); border-radius: 10px; transition: width 0.5s; width: 0%;"></div>
+            </div>
+            <div style="font-size: 0.72rem; color: #666; margin-top: 4px; text-align: center" id="rang-next-label">
+              0 / 150 pts → 🧙 Gardien
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 style="margin-bottom: 1rem">🎭 Rôles les plus joués</h3>
+            <div id="roles-stats" style="display: flex; flex-direction: column; gap: 8px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin: 1.5rem 0">
+        <button class="btn secondary" onclick="window.location.href='accueil.html'">← Retour à l'accueil</button>
+        <button class="btn" style="margin-left:0.5rem" onclick="window.location.href='objectifs.html'">🎯 Voir tous mes objectifs →</button>
+      </div>
+    </div>
+
+    <footer>© 2025 – Loup-Garou en Ligne</footer>
+
+    <script type="module">
+      import { initializeApp, getApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+      import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+      import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyBAAnZP5J_RsTF-puLIkloRT6pyS3TgtAM",
+        authDomain: "loup-garou-en-ligne-32f5b.firebaseapp.com",
+        databaseURL: "https://loup-garou-en-ligne-32f5b-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "loup-garou-en-ligne-32f5b",
+        storageBucket: "loup-garou-en-ligne-32f5b.firebasestorage.app",
+        messagingSenderId: "536792759140",
+        appId: "1:536792759140:web:aefc9cf5e0b271204b9871",
+      };
+      let app;
+      try { app = initializeApp(firebaseConfig); } catch (e) { app = getApp(); }
+      const db = getDatabase(app);
+      const auth = getAuth(app);
+      onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          localStorage.removeItem("lg_session_v2");
+          window.location.href = "connexion.html";
+        }
+      });
+
+      const SESSION_KEY = "lg_session_v2";
+      const session = localStorage.getItem(SESSION_KEY);
+      if (!session) window.location.href = "connexion.html";
+      let me = JSON.parse(session);
+      document.getElementById("top-name").textContent = me.name;
+
+      window.doLogout = function () {
+        localStorage.removeItem(SESSION_KEY);
+        window.location.href = "connexion.html";
+      };
+
+      // ── Personnages de base (tous débloqués) ─────────────────────────────────
+      const AVATAR_LIST = [
+        { id:"f_princesse_custom",        label:"Princesse",     gender:"f", src:"https://i.postimg.cc/fLcC7fNR/IMG-0917.jpg" },
+        { id:"f_princesse_noire_custom",  label:"Mystique",   gender:"f", src:"https://i.postimg.cc/bJxg09hy/IMG-0918.jpg" },
+        { id:"f_sorciere_custom",         label:"Sorcière",      gender:"f", src:"https://i.postimg.cc/fLcC7fNY/IMG-0909.jpg" },
+        { id:"f_sorciere_noire_custom",   label:"Morgane",  gender:"f", src:"https://i.postimg.cc/zBC7wFrH/IMG-0910.jpg" },
+        { id:"f_voyante_custom",          label:"Voyante",       gender:"f", src:"https://i.postimg.cc/Y96RNzH9/f-voyante.jpg" },
+        { id:"f_voyante_noire_custom",    label:"Séraphine",   gender:"f", src:"https://i.postimg.cc/1tGB0rQz/IMG-0913.jpg" },
+        { id:"f_noble_custom",            label:"Noble",    gender:"f", src:"https://i.postimg.cc/1tGB0rQp/IMG-0907.jpg" },
+        { id:"f_noble_noire_custom",      label:"Livia",   gender:"f", src:"https://i.postimg.cc/Ss6dLfhC/IMG-0908.jpg" },
+        { id:"f_chevaliere_custom",       label:"Guerrière",    gender:"f", src:"https://i.postimg.cc/NM6D8kc7/IMG-0904.jpg" },
+        { id:"f_chevaliere_noire_custom", label:"Lyra",   gender:"f", src:"https://i.postimg.cc/cHRh7BSB/IMG-0903.jpg" },
+        { id:"f_archere_custom",          label:"Archère",       gender:"f", src:"https://i.postimg.cc/rpNsTDGg/IMG-0940.jpg" },
+        { id:"f_archere_noire_custom",    label:"Ara",    gender:"f", src:"https://i.postimg.cc/mryk4P3y/IMG-0941.jpg" },
+        { id:"m_prince_custom",           label:"Prince",        gender:"m", src:"https://i.postimg.cc/qRswcxTM/IMG-0915.jpg" },
+        { id:"m_prince_noir_custom",      label:"Aldric",    gender:"m", src:"https://i.postimg.cc/C1G7CsgZ/IMG-0916.jpg" },
+        { id:"m_sorcier_custom",          label:"Sorcier",       gender:"m", src:"https://i.postimg.cc/26QGd7Dd/IMG-0905.jpg" },
+        { id:"m_sorcier_noir_custom",     label:"Malachar",  gender:"m", src:"https://i.postimg.cc/85R4dmSR/IMG-0906.jpg" },
+        { id:"m_voyant_custom",           label:"Voyant",        gender:"m", src:"https://i.postimg.cc/rm1jGNkt/IMG-0911.jpg" },
+        { id:"m_voyant_noir_custom",      label:"Ezra",    gender:"m", src:"https://i.postimg.cc/DZr6QPTJ/IMG-0912.jpg" },
+        { id:"m_noble_v2_custom",         label:"Seigneur",      gender:"m", src:"https://i.postimg.cc/cJSCPR3j/IMG-0938.jpg" },
+        { id:"m_noble_noir_custom",       label:"Dorian",    gender:"m", src:"https://i.postimg.cc/CKs50RC7/IMG-0939.jpg" },
+        { id:"m_chevalier_custom",        label:"Chevalier",     gender:"m", src:"https://i.postimg.cc/fLcC7fNv/IMG-0902.jpg" },
+        { id:"m_chevalier_noir_custom",   label:"Kael",    gender:"m", src:"https://i.postimg.cc/VvzRK0f0/IMG-0901.jpg" },
+        { id:"m_archer_custom",           label:"Archer",        gender:"m", src:"https://i.postimg.cc/fyMK8Sz0/m-archer.jpg" },
+        { id:"m_archer_noir_custom",      label:"Riven",    gender:"m", src:"https://i.postimg.cc/D07gx4vJ/IMG-0900.jpg" },
+      ];
+
+      // ── Personnages exclusifs à débloquer ────────────────────────────────────
+      // condition: fonction qui reçoit (stats, objectifs, points) → true si débloqué
+      const EXCLUSIVE_LIST = [
+        {
+          id: "ex_alpha_loups",
+          label: "Alpha",
+          src: "https://i.postimg.cc/5XGP2vWB/alpha-des-loups.jpg",
+          objId: "l_alpha",
+          hint: "Objectif : 10 victoires en Loup",
+          condition: (s, obj) => obj["l_alpha"] === true,
+        },
+        {
+          id: "ex_grande_voyante",
+          label: "Oracle",
+          src: "https://i.postimg.cc/0z3tym1Z/grande-voyante.jpg",
+          objId: "v_oracle",
+          hint: "Objectif : 3 victoires en Voyante",
+          condition: (s, obj) => obj["v_oracle"] === true,
+        },
+        {
+          id: "ex_chasseur_ombre",
+          label: "Traqueur",
+          src: "https://i.postimg.cc/QFP6d5Z1/chasseur-de-lombre.jpg",
+          objId: "v_traqueur",
+          hint: "Objectif : 3 victoires en Chasseur",
+          condition: (s, obj) => obj["v_traqueur"] === true,
+        },
+        {
+          id: "ex_loup_maudit",
+          label: "Maudit",
+          src: "https://i.postimg.cc/1gqvntyr/loup-garou-maudit.jpg",
+          objId: "v_alchimiste",
+          hint: "Objectif : 3 victoires en Sorcière",
+          condition: (s, obj) => obj["v_alchimiste"] === true,
+        },
+        {
+          id: "ex_chevalier_lune",
+          label: "Lunaire",
+          src: "https://i.postimg.cc/PCc65Znm/chevalier-de-la-pleine-lune.jpg",
+          objId: "v_gardien",
+          hint: "Objectif : Bouclier du Peuple",
+          condition: (s, obj) => obj["v_gardien"] === true,
+        },
+        {
+          id: "ex_loup_fantome",
+          label: "Fantôme",
+          src: "https://i.postimg.cc/t1xBZT9t/loup-fantome.jpg",
+          objId: "l_solitaire",
+          hint: "Objectif : Solitaire Absolu",
+          condition: (s, obj) => obj["l_solitaire"] === true,
+        },
+        {
+          id: "ex_ange_dechu",
+          label: "Déchu",
+          src: "https://i.postimg.cc/v4jPZ9w7/ange-dechu.jpg",
+          objId: "s_ange",
+          hint: "Objectif secret : Gagner en Ange",
+          condition: (s, obj) => obj["s_ange"] === true,
+        },
+        {
+          id: "ex_amoureux_maudits",
+          label: "Maudits",
+          src: "https://i.postimg.cc/gwZgXJGy/les-amoureux-maudits.jpg",
+          objId: "s_amour_maudit",
+          hint: "Objectif secret : Amour Maudit",
+          condition: (s, obj) => obj["s_amour_maudit"] === true,
+        },
+        {
+          id: "ex_flute_maudit",
+          label: "Flûtiste",
+          src: "https://i.postimg.cc/06wVMQ9w/joueur-de-flute-maudit.jpg",
+          objId: "s_flute",
+          hint: "Objectif secret : Gagner en Joueur de Flûte",
+          condition: (s, obj) => obj["s_flute"] === true,
+        },
+        {
+          id: "ex_cameleon",
+          label: "Caméléon",
+          src: "https://i.postimg.cc/FYqPHcXp/le-cameleon.jpg",
+          objId: "s_cameleon",
+          hint: "Objectif secret : Tous les rôles joués",
+          condition: (s, obj) => obj["s_cameleon"] === true,
+        },
+        {
+          id: "ex_dernier_juste",
+          label: "Dernier",
+          src: "https://i.postimg.cc/06wVMQ9S/le-dernier-des-justes.jpg",
+          objId: "s_dernier",
+          hint: "Objectif secret : Dernier villageois survivant",
+          condition: (s, obj) => obj["s_dernier"] === true,
+        },
+        {
+          id: "ex_rang_gardien",
+          label: "Gardien",
+          src: "https://i.postimg.cc/947LRMc1/rang-gardien.jpg",
+          hint: "Atteindre le rang 🧙 Gardien (150 pts)",
+          condition: (s, obj, pts) => pts >= 150,
+        },
+        {
+          id: "ex_rang_ancien",
+          label: "Ancien",
+          src: "https://i.postimg.cc/1gqvntyK/rang-ancien.jpg",
+          hint: "Atteindre le rang 🧝 Ancien (500 pts)",
+          condition: (s, obj, pts) => pts >= 500,
+        },
+        {
+          id: "ex_rang_legendaire",
+          label: "Légendaire",
+          src: "https://i.postimg.cc/XZCsGJnL/rang-legendaire.jpg",
+          hint: "Atteindre le rang 🐺 Légendaire (1200 pts)",
+          condition: (s, obj, pts) => pts >= 1200,
+        },
+      ];
+
+      let CUST = { charId: null, charSrc: null, charLabel: null };
+      let gFilter = "all";
+      let _userObjectifs = {};
+      let _userStats = {};
+      let _userPoints = 0;
+      let _modalPending = null;
+
+      // ── Modal prévisualisation ─────────────────────────────────────────────
+      function openCharModal(id, src, label, hint, locked) {
+        const modal = document.getElementById("char-modal");
+        document.getElementById("modal-img").src = src;
+        document.getElementById("modal-label").textContent = label;
+        const hintEl = document.getElementById("modal-hint");
+        hintEl.textContent = hint || "";
+        const btn = document.getElementById("modal-select-btn");
+        if (locked) {
+          btn.style.display = "none";
+          hintEl.style.color = "#be4444";
+        } else {
+          btn.style.display = "inline-flex";
+          hintEl.style.color = "#888";
+          _modalPending = { id, src, label };
+        }
+        modal.style.display = "flex";
+      }
+
+      window.closeCharModal = function () {
+        document.getElementById("char-modal").style.display = "none";
+        _modalPending = null;
+      };
+
+      window.confirmModalSelect = function () {
+        if (!_modalPending) return;
+        const { id, src, label } = _modalPending;
+        CUST.charId = id;
+        CUST.charSrc = src;
+        CUST.charLabel = label;
+        document.getElementById("char-img").src = src;
+        document.getElementById("char-label-display").textContent = label;
+        renderCharGrid();
+        renderExclusiveGrid();
+        closeCharModal();
+      };
+
+      window.filterG = function (f) {
+        gFilter = f;
+        ["all", "f", "m"].forEach((x) => {
+          const b = document.getElementById("fg-" + x);
+          if (b) b.className = x === f ? "btn" : "btn secondary";
+        });
+        renderCharGrid();
+      };
+
+      function renderCharGrid() {
+        const list = AVATAR_LIST.filter(a => gFilter === "all" || a.gender === gFilter);
+        const c = document.getElementById("char-select-grid");
+        if (!c) return;
+        c.innerHTML = list.map(a => `
+          <div class="char-thumb ${CUST.charId === a.id ? "on" : ""}"
+            onclick="selectChar('${a.id}','${a.src}','${a.label}')"
+            title="${a.label}">
+            <img src="${a.src}" onerror="this.style.display='none'"/>
+            <div class="char-thumb-label">${a.label}</div>
+          </div>`
+        ).join("");
+      }
+
+      window.selectChar = function (id, src, label) {
+        CUST.charId = id;
+        CUST.charSrc = src;
+        CUST.charLabel = label;
+        document.getElementById("char-img").src = src;
+        document.getElementById("char-label-display").textContent = label;
+        renderCharGrid();
+        renderExclusiveGrid();
+      };
+
+      function renderExclusiveGrid() {
+        const c = document.getElementById("exclusive-grid");
+        if (!c) return;
+        const unlocked = EXCLUSIVE_LIST.filter(e =>
+          e.condition(_userStats, _userObjectifs, _userPoints)
+        );
+        const locked = EXCLUSIVE_LIST.filter(e =>
+          !e.condition(_userStats, _userObjectifs, _userPoints)
+        );
+        const countEl = document.getElementById("unlock-count");
+        if (countEl) countEl.textContent = `${unlocked.length}/${EXCLUSIVE_LIST.length} débloqués`;
+        const sorted = [...unlocked, ...locked];
+        c.innerHTML = sorted.map(e => {
+          const isUnlocked = e.condition(_userStats, _userObjectifs, _userPoints);
+          const isSelected = CUST.charId === e.id;
+          const shortLabel = e.label.split(" ").slice(0,2).join(" ");
+          if (isUnlocked) {
+            return `<div class="char-thumb ${isSelected ? "on" : ""}"
+              onclick="selectChar('${e.id}','${e.src}','${e.label}')"
+              title="${e.label}">
+              <img src="${e.src}" onerror="this.style.display='none'"/>
+              <div class="char-thumb-label" style="color:#c9a44c">⭐ ${shortLabel}</div>
+              ${isSelected ? '<div class="unlock-badge">✓</div>' : ''}
+            </div>`;
+          } else {
+            return `<div class="char-thumb locked"
+              onclick="openCharModal('${e.id}','${e.src}','${e.label}','🔒 ${e.hint}',true)"
+              title="🔒 ${e.hint}">
+              <img src="${e.src}" onerror="this.style.display='none'"/>
+              <div class="lock-icon">🔒</div>
+              <div class="char-thumb-label">${shortLabel}</div>
+            </div>`;
+          }
+        }).join("");
+      }
+
+      window.saveCustomization = async function () {
+        me.selectedAvatar = CUST.charId;
+        me.avatarUrl = CUST.charSrc;
+        me.avatarLabel = CUST.charLabel;
+        me.customization = { ...CUST };
+        try {
+          await update(ref(db, "users/" + me.id), {
+            avatarUrl: CUST.charSrc,
+            selectedAvatar: CUST.charId,
+            avatarLabel: CUST.charLabel,
+            customization: { ...CUST },
+          });
+          localStorage.setItem(SESSION_KEY, JSON.stringify(me));
+          renderAvatarDisplay();
+          showNotif("✅ Personnage sauvegardé !");
+        } catch (e) {
+          showNotif("Erreur sauvegarde.");
+        }
+      };
+
+      function renderAvatarDisplay() {
+        const el = document.getElementById("avatar-display");
+        if (!el) return;
+        if (me.avatarUrl) {
+          el.innerHTML = `<img src="${me.avatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top">`;
+        } else {
+          el.innerHTML = `<span style="font-size:3.5rem">${me.name[0].toUpperCase()}</span>`;
+        }
+      }
+
+      function initCustomizer() {
+        renderCharGrid();
+        if (me.customization) {
+          Object.assign(CUST, me.customization);
+          if (CUST.charSrc) {
+            document.getElementById("char-img").src = CUST.charSrc;
+            document.getElementById("char-label-display").textContent = CUST.charLabel || "";
+          }
+          renderCharGrid();
+        }
+        renderExclusiveGrid();
+      }
+
+      const RANGS = [
+        { min: 0,    label: "🌿 Villageois", color: "#888",    next: 150  },
+        { min: 150,  label: "🧙 Gardien",    color: "#6db4ff", next: 500  },
+        { min: 500,  label: "🧝 Ancien",     color: "#c9a44c", next: 1200 },
+        { min: 1200, label: "🐺 Légendaire", color: "#be6d6d", next: null },
+      ];
+      function getRang(points) {
+        let r = RANGS[0];
+        RANGS.forEach(x => { if (points >= x.min) r = x; });
+        return r;
+      }
+      function getRangPct(points) {
+        const idx = RANGS.findIndex(x => points < (x.next || Infinity));
+        const r = idx >= 0 ? RANGS[idx] : RANGS[RANGS.length - 1];
+        if (!r.next) return 100;
+        const base = idx > 0 ? RANGS[idx - 1].min : 0;
+        return Math.min(100, Math.round(((points - base) / (r.next - base)) * 100));
+      }
+
+      const TITRES = [
+        { min: 0,   label: "🌱 Novice du Village",       color: "#888"    },
+        { min: 3,   label: "🐾 Habitant Méfiant",        color: "#6db4ff" },
+        { min: 7,   label: "🗡️ Chasseur de Loups",       color: "#6dbe6d" },
+        { min: 15,  label: "🔮 Gardien du Secret",       color: "#c9a44c" },
+        { min: 30,  label: "🐺 Meneur de Meute",         color: "#be6d6d" },
+        { min: 50,  label: "🌕 Maître de la Nuit",       color: "#f2e5c6" },
+        { min: 100, label: "👑 Légende de Thiercelieux", color: "#c9a44c" },
+      ];
+      function getTitre(games) {
+        let t = TITRES[0];
+        TITRES.forEach(x => { if (games >= x.min) t = x; });
+        return t;
+      }
+      function getLevel(games) { return Math.floor(games / 5) + 1; }
+      function getXP(games) {
+        const tot = games * 20, lvl = 100;
+        return { current: tot % lvl, next: lvl, pct: Math.round(((tot % lvl) / lvl) * 100) };
+      }
+
+      window.savePseudo = async function () {
+        const name = document.getElementById("new-pseudo").value.trim();
+        const err = document.getElementById("err-pseudo");
+        if (!name) { err.textContent = "Entrez un pseudo."; return; }
+        if (name.length < 2) { err.textContent = "Pseudo trop court."; return; }
+        if (name.length > 20) { err.textContent = "Pseudo trop long."; return; }
+        err.textContent = "";
+        try {
+          await update(ref(db, "users/" + me.id), { name });
+          me.name = name;
+          localStorage.setItem(SESSION_KEY, JSON.stringify(me));
+          document.getElementById("profil-name").textContent = name;
+          document.getElementById("top-name").textContent = name;
+          document.getElementById("new-pseudo").value = "";
+          showNotif("Pseudo mis à jour !");
+        } catch (e) { err.textContent = "Erreur."; }
+      };
+
+      function renderStats(s) {
+        s = s || { games: 0, wins: 0, wolvesKilled: 0, points: 0 };
+        const losses = Math.max(0, s.games - s.wins);
+        const rate = s.games > 0 ? Math.round((s.wins / s.games) * 100) : 0;
+        const level = getLevel(s.games);
+        const xp = getXP(s.games);
+        const titre = getTitre(s.games);
+        const points = s.points || 0;
+        const rang = getRang(points);
+        const rangPct = getRangPct(points);
+
+        // Mettre à jour les variables globales pour les exclusifs
+        _userStats = s;
+        _userPoints = points;
+
+        document.getElementById("st-games").textContent = s.games;
+        document.getElementById("st-wins").textContent = s.wins;
+        document.getElementById("st-losses").textContent = losses;
+        document.getElementById("st-wolves").textContent = s.wolvesKilled || 0;
+        document.getElementById("st-rate").textContent = rate + "%";
+        document.getElementById("st-level").textContent = level;
+        document.getElementById("st-points").textContent = points + " pts";
+        document.getElementById("st-rang").textContent = rang.label;
+        document.getElementById("st-rang").style.color = rang.color;
+
+        document.getElementById("xp-current").textContent = xp.current + " XP";
+        document.getElementById("xp-next").textContent = xp.next + " XP pour niveau " + (level + 1);
+        setTimeout(() => { document.getElementById("xp-bar").style.width = xp.pct + "%"; }, 300);
+        setTimeout(() => {
+          const rb = document.getElementById("rang-bar");
+          if (rb) rb.style.width = rangPct + "%";
+        }, 300);
+
+        const nextRang = RANGS.find(r => r.min > points);
+        const rangNextEl = document.getElementById("rang-next-label");
+        if (rangNextEl) {
+          rangNextEl.textContent = nextRang
+            ? `${points} / ${nextRang.min} pts → ${nextRang.label}`
+            : "Rang maximum atteint !";
+        }
+
+        document.getElementById("profil-name").textContent = me.name;
+        document.getElementById("profil-badge").innerHTML =
+          `<span style="font-family:'Cinzel',serif;color:${rang.color};font-size:0.9rem">${rang.label}</span>`;
+        document.getElementById("titre-display").textContent = titre.label;
+        document.getElementById("profil-since").textContent =
+          "Membre depuis le " + new Date(me.created || Date.now()).toLocaleDateString("fr-FR");
+        renderTitresList(s.games);
+        renderRolesStats(s);
+
+        // Mettre à jour la grille des exclusifs avec les nouvelles stats
+        renderExclusiveGrid();
+      }
+
+      function renderTitresList(games) {
+        const c = document.getElementById("titres-list");
+        c.innerHTML = TITRES.map((t) => {
+          const ok = games >= t.min;
+          return `<div style="padding:6px 10px;border-radius:8px;background:${
+            ok ? "#1a1a00" : "#10131c"
+          };border:1px solid ${ok ? t.color : "#252d3a"};font-size:0.72rem;color:${
+            ok ? t.color : "#444"
+          };text-align:center;font-family:'Cinzel',serif">
+            ${ok ? "" : "🔒 "}${t.label}
+            ${!ok ? `<div style="color:#333;font-size:0.65rem;margin-top:2px">${t.min} parties</div>` : ""}
+          </div>`;
+        }).join("");
+      }
+
+      function renderRolesStats(s) {
+        const roles = s.rolesPlayed || { Villageois: 3, "Loup-Garou": 2, Voyante: 1 };
+        const total = Object.values(roles).reduce((a, b) => a + b, 0) || 1;
+        const icons = {
+          Villageois: "👨‍🌾", "Loup-Garou": "🐺", Voyante: "🔮",
+          Sorciere: "🧙‍♀️", Chasseur: "🏹", Salvateur: "🛡️",
+        };
+        const c = document.getElementById("roles-stats");
+        const sorted = Object.entries(roles).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        if (!sorted.length) {
+          c.innerHTML = '<p style="color:#555;font-style:italic;font-size:0.85rem">Aucune partie jouée.</p>';
+          return;
+        }
+        c.innerHTML = sorted.map(([role, count]) => {
+          const pct = Math.round((count / total) * 100);
+          return `<div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:1.2rem;min-width:28px">${icons[role] || "🎭"}</span>
+            <div style="flex:1">
+              <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:3px">
+                <span>${role}</span><span style="color:var(--accent)">${count} fois</span>
+              </div>
+              <div style="background:#10131c;border-radius:4px;height:6px">
+                <div style="width:${pct}%;height:100%;background:var(--accent);border-radius:4px;transition:width 0.5s"></div>
+              </div>
+            </div>
+          </div>`;
+        }).join("");
+      }
+
+      function showNotif(msg) {
+        const n = document.getElementById("notif");
+        n.textContent = msg;
+        n.style.display = "block";
+        setTimeout(() => (n.style.display = "none"), 3500);
+      }
+
+      // ── INIT depuis Firebase ──────────────────────────────────────────────────
+      async function init() {
+        const snap = await get(ref(db, "users/" + me.id));
+        if (snap.exists()) {
+          const user = snap.val();
+          me = { ...me, ...user };
+          _userObjectifs = user.objectifs || {};
+          localStorage.setItem(SESSION_KEY, JSON.stringify(me));
+        }
+        _userStats = me.stats || {};
+        _userPoints = (_userStats.points) || 0;
+        renderAvatarDisplay();
+        initCustomizer();
+        renderStats(me.stats);
+      }
+
+      init();
+    </script>
+  </body>
+</html>
