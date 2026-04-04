@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Les Loups Garous d'Hurlebois</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .navbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 50;
+        background: rgba(11, 14, 20, 0.97);
+        border-bottom: 1px solid #1e2535;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.6rem 2rem;
+        gap: 1rem;
+      }
+      .navbar-brand {
+        font-family: "Cinzel", serif;
+        font-size: 1rem;
+        color: var(--accent);
+        white-space: nowrap;
+        text-shadow: 0 0 15px rgba(201, 164, 76, 0.4);
+      }
+      .navbar-right {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .nav-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0.4rem 0.9rem;
+        border-radius: 8px;
+        border: 1px solid #252d3a;
+        background: #10131c;
+        color: var(--highlight);
+        cursor: pointer;
+        font-size: 0.8rem;
+        font-family: inherit;
+        transition: 0.2s;
+        white-space: nowrap;
+      }
+      .nav-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: #1a1200;
+      }
+      .nav-btn.danger:hover {
+        border-color: #be6d6d;
+        color: #be6d6d;
+        background: #1a0808;
+      }
+      /* ── Badges de notification ── */
+      .notif-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+      .notif-dot {
+        position: absolute;
+        top: -5px;
+        right: -5px;
+        background: #be4444;
+        color: #fff;
+        border-radius: 50%;
+        width: 18px;
+        height: 18px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #0b0e14;
+        pointer-events: none;
+        z-index: 10;
+      }
+      .notif-dot.show {
+        display: flex;
+      }
+      .nav-avatar {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: #1c2230;
+        border: 2px solid var(--accent);
+        box-shadow: 0 0 10px rgba(201,164,76,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--accent);
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      body {
+        padding-top: 56px;
+      }
+      .salon-card-new {
+        background: #10131c;
+        border: 1px solid #1e2535;
+        border-radius: 12px;
+        padding: 0.9rem 1.1rem;
+        margin-bottom: 0.6rem;
+        transition: 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .salon-card-new:hover {
+        border-color: #2a3550;
+        background: #12161f;
+      }
+      .salon-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .salon-name {
+        font-weight: 700;
+        color: var(--highlight);
+        font-size: 0.95rem;
+        margin-bottom: 3px;
+      }
+      .salon-meta {
+        font-size: 0.72rem;
+        color: #555;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .salon-meta .code {
+        color: var(--accent);
+        font-family: monospace;
+        letter-spacing: 1px;
+      }
+      .salon-joueurs {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .joueur-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #252d3a;
+      }
+      .joueur-dot.filled {
+        background: #6dbe6d;
+      }
+      .salon-actions {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      .btn-rejoindre {
+        padding: 0.45rem 1.1rem;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #1a3a1a, #0e2a0e);
+        border: 1px solid #3a6a3a;
+        color: #6dbe6d;
+        cursor: pointer;
+        font-size: 0.82rem;
+        font-family: inherit;
+        transition: 0.2s;
+        font-weight: 600;
+      }
+      .btn-rejoindre:hover {
+        background: linear-gradient(135deg, #2a4a2a, #1a3a1a);
+        box-shadow: 0 0 12px rgba(109, 190, 109, 0.2);
+      }
+      .btn-delete {
+        padding: 0.45rem 0.7rem;
+        border-radius: 8px;
+        background: #1a0808;
+        border: 1px solid #3a1a1a;
+        color: #be6d6d;
+        cursor: pointer;
+        font-size: 0.82rem;
+        transition: 0.2s;
+      }
+      .btn-delete:hover {
+        border-color: #be6d6d;
+      }
+      .action-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.8rem;
+        margin-top: 0.8rem;
+      }
+      @media (max-width: 500px) {
+        .action-cards {
+          grid-template-columns: 1fr;
+        }
+      }
+      .action-card {
+        background: #10131c;
+        border: 1px solid #1e2535;
+        border-radius: 12px;
+        padding: 1rem;
+      }
+      .action-card h3 {
+        font-size: 0.88rem;
+        margin-bottom: 0.6rem;
+        color: var(--highlight);
+      }
+      .action-card input {
+        margin-bottom: 0.5rem;
+      }
+      .role-card-img {
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: transform 0.3s, box-shadow 0.3s;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+      }
+      .role-card-img:hover {
+        transform: translateY(-8px) scale(1.03);
+        box-shadow: 0 12px 30px rgba(201, 164, 76, 0.4);
+      }
+      .role-card-img img {
+        width: 100%;
+        display: block;
+        border-radius: 12px;
+      }
+      .role-card-desc {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(transparent, rgba(0, 0, 0, 0.92));
+        padding: 1.5rem 0.8rem 0.8rem;
+        border-radius: 0 0 12px 12px;
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+      .role-card-img:hover .role-card-desc {
+        opacity: 1;
+      }
+      .role-card-desc p {
+        font-size: 0.75rem;
+        color: #ddd;
+        line-height: 1.4;
+        margin-top: 3px;
+      }
+    </style>
+  </head>
+  <body style="position: relative">
+    <div class="notif" id="notif"></div>
+
+    <nav class="navbar">
+      <div class="navbar-brand">🐺 Les Loups Garous d'Hurlebois</div>
+      <div class="navbar-right">
+        <span style="font-size: 0.8rem; color: #666"
+          >Connecté :
+          <strong id="top-name" style="color: var(--highlight)"></strong
+        ></span>
+        <div class="notif-wrap">
+          <button class="nav-btn" onclick="window.location.href='amis.html'">
+            👥 Amis
+          </button>
+          <span class="notif-dot" id="badge-amis">0</span>
+        </div>
+        <button class="nav-btn" onclick="window.location.href='objectifs.html'">
+          🎯 Objectifs
+        </button>
+        <button class="nav-btn" onclick="window.location.href='profil.html'">
+          <div class="nav-avatar" id="top-avatar"></div>
+          <span id="top-avatar-name"></span>
+        </button>
+        <button class="nav-btn danger" onclick="doLogout()">⏻ Déco</button>
+      </div>
+    </nav>
+
+    <div class="hero">
+      <div>
+        <h1>Les Loups Garous d'Hurlebois</h1>
+        <p
+          style="
+            font-size: 0.95rem;
+            color: #aaa;
+            font-style: italic;
+            margin-top: 2.5rem;
+            max-width: 600px;
+            line-height: 1.9;
+            text-align: center;
+            margin-left: auto;
+            margin-right: auto;
+          "
+        >
+          Chaque nuit, le mal rôde. Chaque jour, le village tremble.<br />
+          Les innocents cherchent la vérité. Les loups cherchent leur proie.<br />
+          <span style="color: var(--accent); font-style: normal"
+            >Un seul peut gagner. Lequel serez-vous ?</span
+          >
+        </p>
+      </div>
+    </div>
+
+    <div style="max-width: 1100px; margin: 2rem auto; padding: 0 1rem">
+      <div class="card" style="padding: 0; overflow: hidden">
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 1.2rem;
+            border-bottom: 1px solid #1e2535;
+          "
+        >
+          <h2 style="margin: 0; font-size: 1.1rem">
+            🏆 Classement des Meilleurs Joueurs
+          </h2>
+          <span style="font-size: 0.72rem; color: #555; font-style: italic"
+            >Mis à jour en temps réel</span
+          >
+        </div>
+        <div id="leaderboard-full">
+          <p
+            style="
+              color: #555;
+              font-style: italic;
+              text-align: center;
+              padding: 1.5rem;
+            "
+          >
+            Chargement...
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-container">
+      <div class="salons-container">
+        <div class="stats-grid" style="margin-bottom: 1rem">
+          <div class="stat-card">
+            <div class="label">Mes Parties</div>
+            <div class="value" id="s-games">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Victoires</div>
+            <div class="value" style="color: #6dbe6d" id="s-wins">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Loups tués</div>
+            <div class="value" style="color: #be6d6d" id="s-wolves">0</div>
+          </div>
+        </div>
+
+        <div
+          class="card"
+          style="
+            border-color: var(--accent);
+            background: #1a1200;
+            margin-bottom: 1rem;
+            padding: 0.8rem 1rem;
+          "
+        >
+          <span
+            style="font-size: 0.8rem; color: var(--accent); font-weight: 600"
+            >📊 Mon Classement</span
+          >
+          <div
+            id="my-rank"
+            style="font-size: 0.82rem; color: var(--highlight); margin-top: 4px"
+          >
+            Jouez votre première partie pour apparaître !
+          </div>
+        </div>
+
+        <div
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.6rem;
+          "
+        >
+          <h2 style="margin: 0; font-size: 1.1rem">🏘️ Salons Actifs</h2>
+          <button
+            id="btn-clean-all"
+            onclick="cleanAllMySalons()"
+            title="Supprimer tous mes anciens salons"
+            style="
+              display: none;
+              background: #3a1a1a;
+              border: 1px solid #6a3a3a;
+              color: #be6d6d;
+              border-radius: 6px;
+              padding: 3px 10px;
+              cursor: pointer;
+              font-size: 0.72rem;
+              margin-left: 8px;
+            "
+          >
+            🗑️ Tout nettoyer
+          </button>
+          <button
+            class="nav-btn"
+            id="btn-voir-plus"
+            style="display: none; font-size: 0.75rem"
+            onclick="window.location.href='salons.html'"
+          >
+            Voir tous →
+          </button>
+        </div>
+        <div id="salons-list"></div>
+
+        <div class="action-cards">
+          <div class="action-card">
+            <h3>🔑 Rejoindre par code</h3>
+            <input
+              type="text"
+              id="join-code"
+              placeholder="LOUP-XXXX"
+              style="
+                text-transform: uppercase;
+                letter-spacing: 2px;
+                margin-bottom: 0.5rem;
+              "
+            />
+            <button class="btn full" onclick="joinByCode()">Rejoindre</button>
+          </div>
+          <div class="action-card">
+            <h3>➕ Créer un salon</h3>
+            <input
+              type="text"
+              id="new-salon-name"
+              placeholder="Nom du salon"
+              style="margin-bottom: 0.5rem"
+            />
+            <div style="margin-bottom: 0.6rem">
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: 6px;
+                "
+              >
+                <span style="font-size: 0.75rem; color: #888"
+                  >Joueurs max :</span
+                >
+                <span
+                  id="salon-max-display"
+                  style="
+                    font-size: 1.1rem;
+                    font-weight: 700;
+                    color: var(--accent);
+                    font-family: 'Cinzel', serif;
+                    min-width: 28px;
+                    text-align: right;
+                  "
+                  >10</span
+                >
+              </div>
+              <input
+                type="range"
+                id="salon-max-slider"
+                min="4"
+                max="30"
+                value="10"
+                step="1"
+                oninput="updateSlider(this.value)"
+                style="
+                  width: 100%;
+                  accent-color: var(--accent);
+                  cursor: pointer;
+                  margin: 2px 0 4px;
+                "
+              />
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  font-size: 0.62rem;
+                  color: #444;
+                  margin-top: 1px;
+                "
+              >
+                <span>4</span><span>10</span><span>20</span><span>30</span>
+              </div>
+            </div>
+            <input type="hidden" id="salon-max" value="10" />
+            <button class="btn full" onclick="creerSalon()">
+              Créer le salon
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rules-container">
+        <section>
+          <h2>Comment Jouer</h2>
+          <p
+            style="
+              line-height: 1.9;
+              margin-bottom: 1.5rem;
+              font-style: italic;
+              color: #ccc;
+            "
+          >
+            Plongez au cœur d'un drame ancestral. Chaque nuit, la pleine lune
+            révèle la véritable nature de certains habitants…
+          </p>
+          <div class="how-to-play">
+            <div class="step">
+              <div class="step-number">1</div>
+              <div>
+                <strong>La Nuit tombe</strong>
+                <p>Les Loups-Garous choisissent secrètement leur victime.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-number">2</div>
+              <div>
+                <strong>L'Aube se lève</strong>
+                <p>Le village découvre la victime de la nuit.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-number">3</div>
+              <div>
+                <strong>Le Village vote</strong>
+                <p>Les villageois éliminent par vote le suspect.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="step-number">4</div>
+              <div>
+                <strong>Victoire !</strong>
+                <p>Le village gagne si tous les Loups sont éliminés.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section style="margin-top: 2rem">
+          <h2>Les Rôles</h2>
+          <div
+            style="
+              display: grid;
+              grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+              gap: 1rem;
+            "
+          >
+            <!-- 🐺 LOUPS -->
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/d0j3FhmY/IMG-0926.jpg"
+                alt="Loup-Garou"
+              />
+              <div class="role-card-desc">
+                <span class="badge red">Maléfique</span>
+                <p>Tuez un villageois chaque nuit.</p>
+              </div>
+            </div>
+
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/6QfqK8Lp/IMG-0924.jpg"
+                alt="Grand Méchant Loup"
+              />
+              <div class="role-card-desc">
+                <span class="badge red">Maléfique</span>
+                <p>
+                  Élimine un 2ème joueur les nuits où aucun loup n'est éliminé.
+                </p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/257yY1Fj/IMG-0925.jpg"
+                alt="Loup Blanc"
+              />
+              <div class="role-card-desc">
+                <span class="badge red">Solitaire</span>
+                <p>Gagne seul en éliminant tout le monde !</p>
+              </div>
+            </div>
+
+            <!-- 🌾 VILLAGE -->
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/MGmHwnbz/IMG-0927.jpg"
+                alt="Villageois"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>Observez et votez bien !</p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/MGmHwn0g/IMG-0931.jpg"
+                alt="Voyante"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>Révélez le camp d'un joueur chaque nuit.</p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/nLGrxXKW/IMG-0934.jpg"
+                alt="Voyante Bavarde"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>
+                  Révèle une identité par nuit, mais le meneur donne des
+                  indices.
+                </p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/T34FwxGW/carte-sorciere.jpg"
+                alt="Sorcière"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>Elle possède deux potions : une de vie et une de mort.</p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/fLWLRMBs/IMG-0921.jpg"
+                alt="Chasseur"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>En mourant, emportez un joueur !</p>
+              </div>
+            </div>
+
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/RFCFZvXx/IMG-0922.jpg"
+                alt="Salvateur"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>Protégez un joueur chaque nuit.</p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/q7xqrNcS/IMG-0932.jpg"
+                alt="L'Ancien"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>
+                  Résiste aux loups 2 nuits. Si exécuté, tous perdent leurs
+                  pouvoirs !
+                </p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/434yJzfx/carte-corbeau.jpg"
+                alt="Le Corbeau"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>
+                  Chaque nuit, il désigne un suspect qui aura 2 votes contre
+                  lui.
+                </p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/d0j3FhRX/IMG-0933.jpg"
+                alt="Montreur d'Ours"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>L'ours grogne si un loup est voisin le matin.</p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/CKs50RC3/IMG-0930.jpg"
+                alt="Petite Fille"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>Espionnez les loups la nuit.</p>
+              </div>
+            </div>
+
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/wvxvj90d/IMG-0919.jpg"
+                alt="Idiot du Village"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>Survit au premier vote mais perd son droit de vote !</p>
+              </div>
+            </div>
+
+            <!-- ✨ SPÉCIAUX -->
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/W4wzVd6j/IMG-0929.jpg"
+                alt="Cupidon"
+              />
+              <div class="role-card-desc">
+                <span class="badge gold">Spécial</span>
+                <p>Liez deux amoureux la première nuit.</p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/V6s6kzD8/IMG-0920.jpg"
+                alt="Voleur"
+              />
+              <div class="role-card-desc">
+                <span class="badge gold">Spécial</span>
+                <p>Échange son rôle avec une carte non utilisée.</p>
+              </div>
+            </div>
+
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/k4bm94bx/carte-ange.jpg"
+                alt="L'Ange"
+              />
+              <div class="role-card-desc">
+                <span class="badge gold">Spécial</span>
+                <p>Gagne s'il est éliminé au premier vote du village !</p>
+              </div>
+            </div>
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/VmHRVD7T/carte-lenfantsauvage.jpg"
+                alt="Enfant Sauvage"
+              />
+              <div class="role-card-desc">
+                <span class="badge gold">Spécial</span>
+                <p>
+                  Choisit un modèle. Si celui-ci meurt, l'enfant devient un
+                  Loup-Garou !
+                </p>
+              </div>
+            </div>
+
+            <!-- 🎵 NEUTRE -->
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/yNyxKDhr/IMG-0935.jpg"
+                alt="Joueur de Flûte"
+              />
+              <div class="role-card-desc">
+                <span class="badge gold">Neutre</span>
+                <p>
+                  Charme 2 joueurs par nuit. Gagne seul si tout le village est
+                  charmé !
+                </p>
+              </div>
+            </div>
+
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/pL4SmdmH/boucetemissaire.jpg"
+                alt="Bouc-émissaire"
+              />
+              <div class="role-card-desc">
+                <span class="badge green">Village</span>
+                <p>
+                  En cas d'égalité au vote, il est sacrifié à la place — et
+                  choisit qui vote le lendemain.
+                </p>
+              </div>
+            </div>
+
+            <div class="role-card-img">
+              <img
+                src="https://i.postimg.cc/wj7PxNTS/chien%20loup.jpg"
+                alt="Chien-Loup"
+              />
+              <div class="role-card-desc">
+                <span class="badge gold">Spécial</span>
+                <p>
+                  La 1ère nuit, choisit son camp : Village ou Loups. Son choix
+                  est définitif.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section style="margin-top: 2rem">
+          <h2>Fonctionnalités</h2>
+          <div
+            style="
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+              gap: 1rem;
+              margin-top: 1.5rem;
+            "
+          >
+            <div
+              class="card"
+              style="
+                text-align: center;
+                padding: 1.5rem;
+                border-color: #252d3a;
+                background: #10131c;
+              "
+            >
+              <div style="font-size: 2rem; margin-bottom: 0.6rem">🌐</div>
+              <h3 style="font-size: 0.95rem; margin-bottom: 0.4rem">
+                Multijoueur en ligne
+              </h3>
+              <p style="font-size: 0.78rem; color: #888; line-height: 1.6">
+                Jouez avec vos amis depuis n'importe où.
+              </p>
+            </div>
+            <div
+              class="card"
+              style="
+                text-align: center;
+                padding: 1.5rem;
+                border-color: #252d3a;
+                background: #10131c;
+              "
+            >
+              <div style="font-size: 2rem; margin-bottom: 0.6rem">🃏</div>
+              <h3 style="font-size: 0.95rem; margin-bottom: 0.4rem">
+                20 rôles uniques
+              </h3>
+              <p style="font-size: 0.78rem; color: #888; line-height: 1.6">
+                Chaque rôle change la partie.
+              </p>
+            </div>
+            <div
+              class="card"
+              style="
+                text-align: center;
+                padding: 1.5rem;
+                border-color: #252d3a;
+                background: #10131c;
+              "
+            >
+              <div style="font-size: 2rem; margin-bottom: 0.6rem">💬</div>
+              <h3 style="font-size: 0.95rem; margin-bottom: 0.4rem">
+                Chat en temps réel
+              </h3>
+              <p style="font-size: 0.78rem; color: #888; line-height: 1.6">
+                Débattez, accusez, bluffez !
+              </p>
+            </div>
+            <div
+              class="card"
+              style="
+                text-align: center;
+                padding: 1.5rem;
+                border-color: #252d3a;
+                background: #10131c;
+              "
+            >
+              <div style="font-size: 2rem; margin-bottom: 0.6rem">⏱️</div>
+              <h3 style="font-size: 0.95rem; margin-bottom: 0.4rem">
+                Timers automatiques
+              </h3>
+              <p style="font-size: 0.78rem; color: #888; line-height: 1.6">
+                Phases chronométrées.
+              </p>
+            </div>
+            <div
+              class="card"
+              style="
+                text-align: center;
+                padding: 1.5rem;
+                border-color: #252d3a;
+                background: #10131c;
+              "
+            >
+              <div style="font-size: 2rem; margin-bottom: 0.6rem">🏆</div>
+              <h3 style="font-size: 0.95rem; margin-bottom: 0.4rem">
+                Classement global
+              </h3>
+              <p style="font-size: 0.78rem; color: #888; line-height: 1.6">
+                Grimpez dans le classement !
+              </p>
+            </div>
+            <div
+              class="card"
+              style="
+                text-align: center;
+                padding: 1.5rem;
+                border-color: #252d3a;
+                background: #10131c;
+              "
+            >
+              <div style="font-size: 2rem; margin-bottom: 0.6rem">👥</div>
+              <h3 style="font-size: 0.95rem; margin-bottom: 0.4rem">
+                Jusqu'à 30 joueurs
+              </h3>
+              <p style="font-size: 0.78rem; color: #888; line-height: 1.6">
+                De 4 à 30 joueurs avec bots.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <footer>© 2025 – Les Loups Garous d'Hurlebois</footer>
+
+    <script type="module">
+      import {
+        initializeApp,
+        getApp,
+      } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+      import {
+        getDatabase,
+        ref,
+        set,
+        get,
+        onValue,
+        remove,
+      } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+      import {
+        getAuth,
+        signInWithCustomToken,
+        onAuthStateChanged,
+      } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyBAAnZP5J_RsTF-puLIkloRT6pyS3TgtAM",
+        authDomain: "loup-garou-en-ligne-32f5b.firebaseapp.com",
+        databaseURL:
+          "https://loup-garou-en-ligne-32f5b-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "loup-garou-en-ligne-32f5b",
+        storageBucket: "loup-garou-en-ligne-32f5b.firebasestorage.app",
+        messagingSenderId: "536792759140",
+        appId: "1:536792759140:web:aefc9cf5e0b271204b9871",
+      };
+      let app;
+      try {
+        app = initializeApp(firebaseConfig);
+      } catch (e) {
+        app = getApp();
+      }
+      const db = getDatabase(app);
+      const auth = getAuth(app);
+
+      const SESSION_KEY = "lg_session_v2";
+      const sess = localStorage.getItem(SESSION_KEY);
+      if (!sess) {
+        window.location.href = "connexion.html";
+      }
+      const me = JSON.parse(sess || "{}");
+
+      // S'assurer que Firebase Auth est bien actif (reconnexion silencieuse)
+      // 🔒 Attendre Firebase Auth avant toute lecture DB
+      onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          localStorage.removeItem(SESSION_KEY);
+          window.location.href = "connexion.html";
+          return;
+        }
+        _initAccueil();
+      });
+
+      function _initAccueil() {
+        // ════════════════════════════════════════════════════════════
+        //  SYSTÈME DE NOTIFICATIONS — badges rouges
+        // ════════════════════════════════════════════════════════════
+        function updateBadge(id, count) {
+          const el = document.getElementById(id);
+          if (!el) return;
+          if (count > 0) {
+            el.textContent = count > 99 ? "99+" : count;
+            el.classList.add("show");
+          } else {
+            el.classList.remove("show");
+          }
+        }
+
+        // Badge amis : messages non-lus + demandes en attente (Firebase)
+        async function listenNotifAmis() {
+          onValue(ref(db, "friends/" + me.id), async (snap) => {
+            const data = snap.exists() ? snap.val() : {};
+
+            // Normaliser en tableaux
+            let requestsIn = data.requestsIn || [];
+            let friends = data.friends || [];
+            if (!Array.isArray(requestsIn))
+              requestsIn = Object.values(requestsIn);
+            if (!Array.isArray(friends)) friends = Object.values(friends);
+
+            const demandesCount = requestsIn.length;
+
+            // Messages privés non-lus dans Firebase
+            let msgCount = 0;
+            await Promise.all(
+              friends.map(async (fid) => {
+                const key = [me.id, fid].sort().join("_");
+                const msgSnap = await get(ref(db, "privMessages/" + key));
+                if (msgSnap.exists()) {
+                  msgCount += Object.values(msgSnap.val()).filter(
+                    (m) => m.from !== me.id && !m.read
+                  ).length;
+                }
+              })
+            );
+
+            updateBadge("badge-amis", demandesCount + msgCount);
+          });
+        }
+
+        listenNotifAmis();
+
+        document.getElementById("top-name").textContent = me.name;
+        document.getElementById("top-avatar-name").textContent = me.name;
+        const topAvatar = document.getElementById("top-avatar");
+        if (me.avatarUrl) {
+          topAvatar.innerHTML = `<img src="${me.avatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:top"/>`;
+        } else {
+          topAvatar.textContent = me.name[0].toUpperCase();
+        }
+
+        const stats = me.stats || { games: 0, wins: 0, wolvesKilled: 0 };
+        document.getElementById("s-games").textContent = stats.games;
+        document.getElementById("s-wins").textContent = stats.wins;
+        document.getElementById("s-wolves").textContent =
+          stats.wolvesKilled || 0;
+
+        window.doLogout = function () {
+          localStorage.removeItem(SESSION_KEY);
+          localStorage.removeItem("lg_current_salon");
+          localStorage.removeItem("lg_is_host");
+          window.location.href = "connexion.html";
+        };
+
+        // ── Nettoyage automatique des salons fantômes ────────────────────────
+        // Supprime les salons : vieux de +2h, ou seul joueur depuis +30min,
+        // ou hostLastSeen=0 (hôte déconnecté sans revenir)
+        const SALON_MAX_AGE = 2 * 60 * 60 * 1000; // 2 heures
+        const SALON_ALONE_AGE = 30 * 60 * 1000; // 30 min avec 1 seul joueur
+
+        async function cleanupSalons(salons) {
+          const now = Date.now();
+          const toDelete = [];
+          Object.entries(salons || {}).forEach(([id, s]) => {
+            if (!s || s.status === "started") return; // ne pas toucher les parties en cours
+            const age = now - (s.created || 0);
+            const alone = (s.players || []).length <= 1;
+            const oldEnough = age > SALON_MAX_AGE;
+            const aloneAndOld = alone && age > SALON_ALONE_AGE;
+            if (oldEnough || aloneAndOld) toDelete.push(id);
+          });
+          for (const id of toDelete) {
+            await remove(ref(db, "salons/" + id));
+            await remove(ref(db, "lobbyPresence/" + id));
+          }
+          if (toDelete.length > 0)
+            console.log(
+              "[Cleanup] " +
+                toDelete.length +
+                " salon(s) fantôme(s) supprimé(s)."
+            );
+        }
+
+        // Supprime TOUS les salons "waiting" dont je suis l'hôte
+        window.cleanAllMySalons = async function () {
+          if (!confirm("Supprimer tous vos salons en attente ?")) return;
+          const snap = await get(ref(db, "salons"));
+          if (!snap.exists()) return;
+          let count = 0;
+          for (const [id, s] of Object.entries(snap.val())) {
+            if (s.host === me.id && s.status === "waiting") {
+              await remove(ref(db, "salons/" + id));
+              await remove(ref(db, "lobbyPresence/" + id));
+              count++;
+            }
+          }
+          showNotif("🗑️ " + count + " salon(s) supprimé(s) !");
+        };
+
+        onValue(ref(db, "salons"), (snap) => {
+          const salons = snap.exists() ? snap.val() : {};
+          // Nettoyage silencieux à chaque refresh de la liste
+          cleanupSalons(salons);
+          renderSalons(salons);
+          // Afficher le bouton "Tout nettoyer" si j'ai plusieurs salons
+          const mySalons = Object.values(salons).filter(
+            (s) => s.host === me.id && s.status === "waiting"
+          );
+          const btn = document.getElementById("btn-clean-all");
+          if (btn)
+            btn.style.display = mySalons.length > 1 ? "inline-block" : "none";
+        });
+
+        function renderSalons(salons) {
+          const list = Object.values(salons || {})
+            .filter((s) => s.status === "waiting")
+            .sort((a, b) => (b.created || 0) - (a.created || 0))
+            .slice(0, 6);
+          const c = document.getElementById("salons-list");
+          const btnPlus = document.getElementById("btn-voir-plus");
+          if (!list.length) {
+            c.innerHTML =
+              '<p style="color:#555;font-style:italic;text-align:center;padding:1rem;font-size:0.85rem">Aucun salon actif — créez-en un !</p>';
+            btnPlus.style.display = "none";
+            return;
+          }
+          btnPlus.style.display = list.length >= 6 ? "block" : "none";
+          c.innerHTML = list
+            .map((s) => {
+              const filled = s.players.length,
+                total = s.max;
+              const dots = Array.from(
+                { length: Math.min(total, 10) },
+                (_, i) =>
+                  `<div class="joueur-dot ${i < filled ? "filled" : ""}"></div>`
+              ).join("");
+              return `<div class="salon-card-new">
+            <div class="salon-info">
+              <div class="salon-name">${s.name}</div>
+              <div class="salon-meta">
+                <span>Hôte : <strong style="color:var(--highlight)">${
+                  s.hostName
+                }</strong></span>
+                <span class="code">${s.code}</span>
+                <span style="color:${
+                  filled >= total ? "#be6d6d" : "#6dbe6d"
+                }">${filled}/${total} joueurs</span>
+              </div>
+              <div class="salon-joueurs" style="margin-top:5px">${dots}</div>
+            </div>
+            <div class="salon-actions">
+              <button class="btn-rejoindre" onclick="joinSalon('${
+                s.id
+              }')">⚔️ Rejoindre</button>
+              ${
+                s.host === me.id
+                  ? `<button class="btn-delete" onclick="supprimerSalon('${s.id}')">🗑️</button>`
+                  : ""
+              }
+            </div>
+          </div>`;
+            })
+            .join("");
+        }
+
+        onValue(ref(db, "users"), (snap) => {
+          renderLeaderboard(snap.exists() ? snap.val() : {});
+        });
+
+        function getRangLabel(points) {
+          const p = points || 0;
+          if (p >= 1200) return { label: "🐺 Légendaire", color: "#be6d6d" };
+          if (p >= 500)  return { label: "🧝 Ancien",     color: "#c9a44c" };
+          if (p >= 150)  return { label: "🧙 Gardien",    color: "#6db4ff" };
+          return               { label: "🌿 Villageois",  color: "#888"    };
+        }
+
+        function renderLeaderboard(users) {
+          const list = Object.values(users)
+            .filter((u) => u.stats && u.stats.games > 0)
+            .sort((a, b) => (b.stats.points || 0) - (a.stats.points || 0))
+            .slice(0, 10);
+          const c = document.getElementById("leaderboard-full");
+          if (!list.length) {
+            c.innerHTML =
+              '<p style="color:#555;font-style:italic;text-align:center;padding:1.5rem">Aucune partie jouée — soyez le premier !</p>';
+            return;
+          }
+          const medals = ["🥇", "🥈", "🥉"];
+          c.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0">${list
+            .map((u, i) => {
+              const s = u.stats,
+                winrate = s.games > 0 ? Math.round((s.wins / s.games) * 100) : 0,
+                isMe = u.id === me.id,
+                rang = getRangLabel(s.points);
+              return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1e2535;${isMe ? "background:#1a1200;" : ""}">
+            <span style="font-size:1.4rem;min-width:32px;text-align:center">${medals[i] || `<span style='color:#555'>#${i + 1}</span>`}</span>
+            <div class="avatar" style="width:36px;height:36px;font-size:0.9rem;flex-shrink:0">${u.name[0].toUpperCase()}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;color:${isMe ? "var(--accent)" : "var(--highlight)"}">${u.name}${isMe ? '<span class="badge gold" style="font-size:0.58rem;padding:1px 6px;margin-left:6px">Vous</span>' : ""}</div>
+              <div style="font-size:0.7rem;color:${rang.color};margin-top:2px">${rang.label}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="color:var(--accent);font-weight:700;font-size:1.1rem">${s.points || 0} pts</div>
+              <div style="font-size:0.68rem;color:${winrate >= 50 ? "#6dbe6d" : "#888"}">${winrate}% win</div>
+            </div>
+          </div>`;
+            })
+            .join("")}</div>`;
+
+          const myRank = list.findIndex((u) => u.id === me.id);
+          const rankEl = document.getElementById("my-rank");
+          if (myRank >= 0) {
+            const ms = list[myRank].stats,
+              mwr = ms.games > 0 ? Math.round((ms.wins / ms.games) * 100) : 0,
+              mrang = getRangLabel(ms.points);
+            rankEl.innerHTML = `<div style="display:flex;justify-content:space-between">
+              <span>${medals[myRank] || "#" + (myRank + 1)} · <strong style="color:var(--accent)">${ms.points || 0} pts</strong> · <span style="color:${mrang.color}">${mrang.label}</span></span>
+              <span style="color:${mwr >= 50 ? "#6dbe6d" : "#888"}">${mwr}% win</span>
+            </div>`;
+          }
+        }
+
+        window.updateSlider = function (val) {
+          document.getElementById("salon-max").value = val;
+          document.getElementById("salon-max-display").textContent = val;
+        };
+
+        window.creerSalon = async function () {
+          const name = document.getElementById("new-salon-name").value.trim();
+          const max = parseInt(document.getElementById("salon-max").value);
+          if (!name) {
+            showNotif("Donnez un nom au salon !");
+            return;
+          }
+          const id = "salon_" + Date.now();
+          const salon = {
+            id,
+            name,
+            max,
+            code: genCode(),
+            private: false,
+            host: me.id,
+            hostName: me.name,
+            players: [{ id: me.id, name: me.name, ready: true }],
+            status: "waiting",
+            created: Date.now(),
+          };
+          await set(ref(db, "salons/" + id), salon);
+          localStorage.setItem("lg_current_salon", id);
+          localStorage.setItem("lg_is_host", "true");
+          window.location.href = "lobby.html";
+        };
+
+        window.joinSalon = async function (id) {
+          const snap = await get(ref(db, "salons/" + id));
+          if (!snap.exists()) {
+            showNotif("Salon introuvable.");
+            return;
+          }
+          const salon = snap.val();
+
+          // Partie déjà lancée → rejoindre en spectateur
+          if (salon.status === "started" || salon.status === "started") {
+            const spectators = salon.spectators || {};
+            // Déjà inscrit comme spectateur ou joueur
+            if (
+              spectators[me.id] ||
+              (salon.players && salon.players.find((p) => p.id === me.id))
+            ) {
+              localStorage.setItem("lg_current_salon", id);
+              localStorage.setItem("lg_is_host", "false");
+              localStorage.setItem("lg_is_spectator", "true");
+              window.location.href = "partie.html";
+              return;
+            }
+            // Confirmer avant de rejoindre en spectateur
+            if (
+              !confirm(
+                "La partie est déjà lancée. Rejoindre en spectateur (observateur) ?"
+              )
+            )
+              return;
+            spectators[me.id] = {
+              id: me.id,
+              name: me.name,
+              joinedAt: Date.now(),
+            };
+            await update(ref(db, "salons/" + id), { spectators });
+            localStorage.setItem("lg_current_salon", id);
+            localStorage.setItem("lg_is_host", "false");
+            localStorage.setItem("lg_is_spectator", "true");
+            window.location.href = "partie.html";
+            return;
+          }
+
+          // Déjà dans le salon
+          if (salon.players.find((p) => p.id === me.id)) {
+            localStorage.setItem("lg_current_salon", id);
+            localStorage.setItem("lg_is_host", "false");
+            window.location.href = "lobby.html";
+            return;
+          }
+          const humanPlayers = salon.players.filter(p => !p.isBot);
+          const bots = salon.players.filter(p => p.isBot);
+          // Salon plein de vrais joueurs
+          if (humanPlayers.length >= salon.max) {
+            showNotif("Salon plein !");
+            return;
+          }
+          // Si bots présents et salon plein → retirer un bot pour faire place
+          if (salon.players.length >= salon.max && bots.length > 0) {
+            bots.pop();
+            salon.players = [...humanPlayers, ...bots];
+          }
+          salon.players.push({ id: me.id, name: me.name, ready: true });
+          await set(ref(db, "salons/" + id), salon);
+          localStorage.setItem("lg_current_salon", id);
+          localStorage.setItem("lg_is_host", "false");
+          localStorage.setItem("lg_is_spectator", "false");
+          window.location.href = "lobby.html";
+        };
+
+        window.joinByCode = async function () {
+          const code = document
+            .getElementById("join-code")
+            .value.trim()
+            .toUpperCase();
+          if (!code) {
+            showNotif("Entrez un code de salon.");
+            return;
+          }
+          const snap = await get(ref(db, "salons"));
+          if (!snap.exists()) {
+            showNotif("Aucun salon avec ce code.");
+            return;
+          }
+          const salon = Object.values(snap.val()).find((s) => s.code === code);
+          if (!salon) {
+            showNotif("Aucun salon avec ce code : " + code);
+            return;
+          }
+          window.joinSalon(salon.id);
+        };
+
+        window.supprimerSalon = async function (id) {
+          if (!confirm("Supprimer ce salon ?")) return;
+          const snap = await get(ref(db, "salons/" + id));
+          if (snap.exists() && snap.val().host === me.id) {
+            await remove(ref(db, "salons/" + id));
+            showNotif("Salon supprimé !");
+          }
+        };
+
+        function genCode() {
+          return "LOUP-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+        }
+
+        window.showNotif = function (msg) {
+          const n = document.getElementById("notif");
+          n.textContent = msg;
+          n.style.display = "block";
+          setTimeout(() => (n.style.display = "none"), 3000);
+        };
+      } // fin _initAccueil
+    </script>
+  </body>
+</html>
