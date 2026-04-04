@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Salons — Loup-Garou</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body style="position: relative">
+    <div class="notif" id="notif"></div>
+
+    <div class="hero" style="min-height: 22vh">
+      <div>
+        <h1>🏰 Tous les Salons</h1>
+        <p style="font-size: 0.95rem">
+          Rejoignez une partie en cours ou créez la vôtre !
+        </p>
+      </div>
+    </div>
+
+    <div style="max-width: 900px; margin: 0 auto; padding: 1rem">
+      <button
+        class="btn secondary"
+        style="margin-bottom: 1.2rem; padding: 0.5rem 1rem; font-size: 0.85rem"
+        onclick="window.location.href='accueil.html'"
+      >
+        ← Retour
+      </button>
+
+      <div id="salons-list">
+        <p
+          style="
+            color: #555;
+            font-style: italic;
+            text-align: center;
+            padding: 2rem;
+          "
+        >
+          Chargement...
+        </p>
+      </div>
+    </div>
+
+    <footer>© 2025 – Loup-Garou en Ligne</footer>
+
+    <script type="module">
+      import {
+        db,
+        auth,
+        ref,
+        onValue,
+        get,
+        set,
+        onAuthStateChanged,
+      } from "./firebase.js";
+
+      const SK = "lg_session_v2";
+      const sess = localStorage.getItem(SK);
+      if (!sess) {
+        window.location.href = "connexion.html";
+      }
+      const me = JSON.parse(sess);
+
+      // 🔒 Attendre Firebase Auth avant toute lecture DB
+      onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          localStorage.removeItem(SK);
+          window.location.href = "connexion.html";
+          return;
+        }
+        _initSalons();
+      });
+
+      function _initSalons() {
+        onValue(ref(db, "salons"), (snap) => {
+          const salons = snap.exists() ? snap.val() : {};
+          const list = Object.values(salons)
+            .filter((s) => s.status === "waiting")
+            .sort((a, b) => (b.created || 0) - (a.created || 0));
+
+          const c = document.getElementById("salons-list");
+          if (!list.length) {
+            c.innerHTML =
+              '<p style="color:#555;font-style:italic;text-align:center;padding:2rem">Aucun salon actif pour le moment.</p>';
+            return;
+          }
+          c.innerHTML = list
+            .map(
+              (s) => `
+          <div class="card" style="margin-bottom:0.8rem;padding:1rem 1.2rem;border-color:#252d3a;transition:border-color 0.2s" onmouseover="this.style.borderColor='rgba(201,164,76,0.4)'" onmouseout="this.style.borderColor='#252d3a'">
+            <!-- Ligne 1 : nom + bouton -->
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:0.6rem">
+              <div>
+                <div style="font-weight:700;color:var(--highlight);font-size:1.05rem;font-family:'Cinzel',serif">${s.name}</div>
+                <div style="font-size:0.72rem;color:#666;margin-top:2px">🎖️ ${s.hostName} · Code : <strong style="color:var(--accent);letter-spacing:2px">${s.code}</strong></div>
+              </div>
+              <button class="btn secondary" style="font-size:0.85rem;padding:0.5rem 1.2rem;flex-shrink:0;${(s.players.filter(p=>!p.isBot).length >= s.max) ? 'opacity:0.4;cursor:not-allowed' : ''}" onclick="joinSalon('${s.id}')" ${(s.players.filter(p=>!p.isBot).length >= s.max) ? 'disabled' : ''}>
+                ${(s.players.filter(p=>!p.isBot).length >= s.max) ? '🔒 Plein' : 'Rejoindre →'}
+              </button>
+            </div>
+            <!-- Ligne 2 : badges infos clés -->
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+              <!-- Joueurs -->
+              <span style="background:#0e1118;border:1px solid #2a3050;border-radius:20px;padding:3px 10px;font-size:0.72rem;color:#aaa;display:flex;align-items:center;gap:4px">
+                👥 <strong style="color:${s.players.filter(p=>!p.isBot).length >= s.max ? '#be6d6d' : '#6dbe6d'}">${s.players.filter(p=>!p.isBot).length}+${s.players.filter(p=>p.isBot).length}🤖</strong>/${s.max}
+              </span>
+              <!-- Durée débat -->
+              ${s.config && s.config.dayDuration ? `<span style="background:#0e1118;border:1px solid #2a3050;border-radius:20px;padding:3px 10px;font-size:0.72rem;color:#aaa">☀️ ${Math.round(s.config.dayDuration/60)} min</span>` : ''}
+              <!-- Vote blanc -->
+              ${s.config ? `<span style="background:#0e1118;border:1px solid #2a3050;border-radius:20px;padding:3px 10px;font-size:0.72rem;color:#aaa">⬜ Vote blanc : <strong style="color:${s.config.allowBlank ? '#6dbe6d' : '#be6d6d'}">${s.config.allowBlank ? 'Oui' : 'Non'}</strong></span>` : ''}
+              <!-- Bots -->
+              ${s.config && s.config.allowBots !== false ? `<span style="background:#0e1118;border:1px solid #2a3050;border-radius:20px;padding:3px 10px;font-size:0.72rem;color:#aaa">🤖 Bots activés</span>` : `<span style="background:#0e1118;border:1px solid #2a3050;border-radius:20px;padding:3px 10px;font-size:0.72rem;color:#aaa">👤 Humains uniquement</span>`}
+              <!-- Rôles spéciaux actifs -->
+              ${(() => {
+                if (!s.players || !s.players[0] || !s.players[0].role) {
+                  // Partie pas encore commencée - montrer config rôles si dispo
+                  return '';
+                }
+                return '';
+              })()}
+            </div>
+            <!-- Ligne 3 : joueurs présents -->
+            <div style="margin-top:0.6rem;display:flex;flex-wrap:wrap;gap:4px">
+              ${(s.players || []).filter(p => !p.isBot).map(p => `
+                <span style="background:#1a1a2e;border:1px solid #2a3050;border-radius:12px;padding:2px 8px;font-size:0.7rem;color:#888">${p.name}</span>
+              `).join('')}
+              ${(s.players || []).filter(p => p.isBot).length > 0 ? `<span style="background:#0e1118;border:1px solid #1e2535;border-radius:12px;padding:2px 8px;font-size:0.7rem;color:#555">+${(s.players||[]).filter(p=>p.isBot).length} bots</span>` : ''}
+            </div>
+          </div>`
+            )
+            .join("");
+        });
+
+        window.joinSalon = async function (id) {
+          const snap = await get(ref(db, "salons/" + id));
+          if (!snap.exists()) {
+            showNotif("Salon introuvable.");
+            return;
+          }
+          const salon = snap.val();
+          if (salon.status !== "waiting") {
+            showNotif("Partie déjà commencée.");
+            return;
+          }
+          // Déjà dans le salon
+          if (salon.players.find((p) => p.id === me.id)) {
+            localStorage.setItem("lg_current_salon", id);
+            localStorage.setItem("lg_is_host", "false");
+            window.location.href = "lobby.html";
+            return;
+          }
+          const humanPlayers = salon.players.filter(p => !p.isBot);
+          const bots = salon.players.filter(p => p.isBot);
+          // Si plein de vrais joueurs → refuser
+          if (humanPlayers.length >= salon.max) {
+            showNotif("Salon plein !");
+            return;
+          }
+          // Si des bots occupent des places → en retirer un pour faire place
+          if (salon.players.length >= salon.max && bots.length > 0) {
+            // Retirer le dernier bot pour libérer une place
+            bots.pop();
+            salon.players = [...humanPlayers, ...bots];
+          }
+          salon.players.push({ id: me.id, name: me.name, ready: true });
+          await set(ref(db, "salons/" + id), salon);
+          localStorage.setItem("lg_current_salon", id);
+          localStorage.setItem("lg_is_host", "false");
+          window.location.href = "lobby.html";
+        };
+
+        function showNotif(msg) {
+          const n = document.getElementById("notif");
+          n.textContent = msg;
+          n.style.display = "block";
+          setTimeout(() => (n.style.display = "none"), 3000);
+        }
+      } // fin _initSalons
+    </script>
+  </body>
+</html>
