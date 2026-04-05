@@ -363,6 +363,95 @@
           background: transparent !important;
         }
       }
+
+      /* ══ PROPORTIONS MOBILE ══ */
+      @media (max-width: 768px) {
+
+        /* ── Espacements généraux ── */
+        [style*="max-width: 1100px"] {
+          padding: 0 0.6rem !important;
+          margin-top: 0.8rem !important;
+        }
+        section { margin-top: 1rem !important; }
+        section + section { margin-top: 0.8rem !important; }
+
+        /* ── Hero plus compact ── */
+        .hero { min-height: 38vh !important; padding: 1rem 1rem 1.2rem !important; }
+        .hero h1 { font-size: 1.7rem !important; margin-bottom: 0.4rem !important; }
+        .hero p { font-size: 0.82rem !important; line-height: 1.5 !important; }
+
+        /* ── Titres de sections ── */
+        h2 { font-size: 1.2rem !important; margin-bottom: 0.6rem !important; }
+
+        /* ── Stats (Mes Parties, Victoires, Loups tués) ── */
+        .stats-grid {
+          grid-template-columns: repeat(3, 1fr) !important;
+          gap: 0.5rem !important;
+          margin-bottom: 0.6rem !important;
+        }
+        .stat-card {
+          padding: 0.5rem 0.4rem !important;
+          border-radius: 8px !important;
+        }
+        .stat-card .label { font-size: 0.6rem !important; }
+        .stat-card .value { font-size: 1.1rem !important; }
+
+        /* ── Mon Classement ── */
+        [style*="border: 1px solid var(--accent)"] {
+          padding: 0.6rem 0.8rem !important;
+          margin-bottom: 0.5rem !important;
+        }
+
+        /* ── Salons actifs ── */
+        .salon-card-new {
+          padding: 0.6rem 0.8rem !important;
+          margin-bottom: 0.4rem !important;
+        }
+        .salon-name { font-size: 0.85rem !important; }
+        .btn-rejoindre { padding: 0.35rem 0.8rem !important; font-size: 0.75rem !important; }
+
+        /* ── Action cards (Rejoindre + Créer) ── */
+        .action-cards { grid-template-columns: 1fr !important; gap: 0.5rem !important; margin-top: 0.5rem !important; }
+        .action-card { padding: 0.7rem 0.8rem !important; border-radius: 10px !important; }
+        .action-card h3 { font-size: 0.8rem !important; margin-bottom: 0.4rem !important; }
+        input { padding: 0.55rem 0.8rem !important; font-size: 0.82rem !important; margin-bottom: 0.4rem !important; }
+        .btn { padding: 0.6rem 1rem !important; font-size: 0.82rem !important; }
+
+        /* ── Comment Jouer ── */
+        .how-to-play { gap: 0.6rem !important; }
+        .step-number { width: 28px !important; height: 28px !important; font-size: 0.8rem !important; flex-shrink: 0; }
+        .step p, .step div { font-size: 0.82rem !important; line-height: 1.4 !important; }
+
+        /* ── Cartes de rôles : 3 par ligne ── */
+        [style*="minmax(150px"] {
+          grid-template-columns: repeat(3, 1fr) !important;
+          gap: 0.4rem !important;
+        }
+
+        /* ── Fonctionnalités : 2 par ligne ── */
+        [style*="minmax(200px"] {
+          grid-template-columns: repeat(2, 1fr) !important;
+          gap: 0.5rem !important;
+        }
+        /* Cards fonctionnalités plus compactes */
+        [style*="minmax(200px"] > div {
+          padding: 0.7rem 0.5rem !important;
+        }
+        [style*="minmax(200px"] > div > div:first-child {
+          font-size: 1.6rem !important;
+          margin-bottom: 0.3rem !important;
+        }
+        [style*="minmax(200px"] h3 { font-size: 0.78rem !important; margin-bottom: 0.2rem !important; }
+        [style*="minmax(200px"] p { font-size: 0.7rem !important; }
+
+        /* ── Classement ── */
+        [style*="padding: 0; overflow: hidden"] {
+          border-radius: 10px !important;
+        }
+
+        /* ── Footer ── */
+        footer { padding: 0.8rem !important; font-size: 0.7rem !important; }
+      }
     </style>
   </head>
   <body style="position: relative">
