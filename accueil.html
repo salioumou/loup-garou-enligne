@@ -294,6 +294,63 @@
           font-size: 0.75rem;
         }
       }
+
+      /* ── Corrections mobile : fonctionnalités, rôles, stats ── */
+      @media (max-width: 600px) {
+
+        /* Stats grid : 3 colonnes compactes */
+        .stats-grid {
+          grid-template-columns: repeat(3, 1fr) !important;
+          gap: 6px;
+        }
+        .stat-card {
+          padding: 0.5rem 0.3rem;
+        }
+        .stat-card .label {
+          font-size: 0.6rem;
+        }
+        .stat-card .value {
+          font-size: 1rem;
+        }
+
+        /* Cartes de fonctionnalités : 2 par ligne au lieu de 1 */
+        section div[style*="minmax(200px"] {
+          grid-template-columns: repeat(2, 1fr) !important;
+          gap: 0.6rem !important;
+        }
+        /* Réduire le padding et la taille des éléments dans les cartes fonctionnalité */
+        section .card[style*="text-align: center"] {
+          padding: 0.8rem 0.5rem !important;
+        }
+        section .card[style*="text-align: center"] div[style*="font-size: 2rem"] {
+          font-size: 1.4rem !important;
+          margin-bottom: 0.3rem !important;
+        }
+        section .card[style*="text-align: center"] h3 {
+          font-size: 0.72rem !important;
+          margin-bottom: 0.2rem !important;
+        }
+        section .card[style*="text-align: center"] p {
+          font-size: 0.65rem !important;
+          line-height: 1.4 !important;
+        }
+
+        /* Cartes de rôles : 3 par ligne, plus petites */
+        section div[style*="minmax(150px"] {
+          grid-template-columns: repeat(3, 1fr) !important;
+          gap: 0.5rem !important;
+        }
+        .role-card-img img {
+          height: 120px;
+          object-fit: cover;
+        }
+
+        /* Titres de section moins imposants */
+        .rules-container h2 {
+          font-size: 1.2rem;
+          margin-bottom: 0.6rem;
+        }
+      }
     </style>
   </head>
   <body style="position: relative">
