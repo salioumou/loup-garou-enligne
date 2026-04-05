@@ -175,6 +175,38 @@
         transition: 0.2s;
         font-weight: 600;
       }
+      @media (max-width: 600px) {
+        /* Boutons rejoindre/créer plus compacts */
+        .btn-rejoindre {
+          padding: 0.6rem 0.8rem;
+          font-size: 0.78rem;
+          border-radius: 10px;
+        }
+        .btn-delete {
+          padding: 0.6rem 0.6rem;
+          font-size: 0.78rem;
+          border-radius: 10px;
+        }
+        /* Boutons principaux (Rejoindre / Créer le salon) */
+        .btn.full {
+          padding: 0.75rem 1rem;
+          font-size: 0.88rem;
+          border-radius: 14px;
+        }
+        /* Champs input plus grands pour le tactile */
+        input[type="text"] {
+          padding: 0.85rem 1rem;
+          font-size: 0.9rem;
+          border-radius: 12px;
+        }
+        /* Action cards côte à côte restent en colonne sur petit écran */
+        .action-card {
+          padding: 0.8rem;
+        }
+        .action-card h3 {
+          font-size: 0.82rem;
+        }
+      }
       .btn-rejoindre:hover {
         background: linear-gradient(135deg, #2a4a2a, #1a3a1a);
         box-shadow: 0 0 12px rgba(109, 190, 109, 0.2);
@@ -341,16 +373,17 @@
           gap: 0.4rem !important;
         }
         .role-card-img {
-          aspect-ratio: 3/4;
+          aspect-ratio: 2/3;
           overflow: hidden;
+          border-radius: 10px;
         }
         .role-card-img img {
           width: 100%;
           height: 100%;
           object-fit: cover;
-          object-position: top;
+          object-position: center 20%;
           display: block;
-          border-radius: 12px;
+          border-radius: 10px;
         }
 
         /* Titres de section moins imposants */
