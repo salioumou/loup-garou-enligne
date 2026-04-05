@@ -254,53 +254,13 @@
         line-height: 1.4;
         margin-top: 3px;
       }
-
-      /* ══ MOBILE ══ */
-      @media (max-width: 768px) {
-        html { min-height: 100%; background: #0b0e14; }
-        body {
-          background-attachment: scroll !important;
-          background-size: cover !important;
-          background-position: center top !important;
-          background-repeat: no-repeat !important;
-          min-height: 100vh;
-        }
-        /* Cards semi-transparentes pour voir l'image de fond */
-        .card, .action-card, .salon-card-new {
-          background: rgba(16, 19, 28, 0.85) !important;
-          backdrop-filter: blur(6px);
-          -webkit-backdrop-filter: blur(6px);
-        }
-        /* Navbar compacte */
-        .navbar { padding: 0 10px; height: 48px; gap: 6px; }
-        .navbar-brand { font-size: 0.72rem; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
-        .navbar-right > span:first-child { display: none !important; }
-        .nav-btn { padding: 5px 7px; font-size: 0.72rem; }
-        .nav-avatar { width: 30px !important; height: 30px !important; font-size: 0.7rem; }
-        .btn-label { display: none; }
-        body { padding-top: 48px; }
-        /* Hero avec image de fond */
-        .hero {
-          background-image: linear-gradient(rgba(11,14,20,0.5), rgba(11,14,20,0.65)),
-            url("https://i.imgur.com/irRgz5r.png") !important;
-          background-size: cover !important;
-          background-position: center top !important;
-          background-attachment: scroll !important;
-          min-height: 50vh;
-          padding: 1.5rem 1rem;
-        }
-        .hero h1 { font-size: 2rem !important; }
-        .hero p { font-size: 0.9rem !important; line-height: 1.6; }
-        /* Grille 1 colonne */
-        .action-cards { grid-template-columns: 1fr !important; }
-      }
-      @media (max-width: 400px) {
-        .hero h1 { font-size: 1.7rem !important; }
-        .navbar-brand { max-width: 80px; }
-      }
     </style>
   </head>
   <body style="position: relative">
+    <!-- Fond pleine page fixe -->
+    <div style="position:fixed;inset:0;z-index:-1;
+      background-image:linear-gradient(rgba(11,14,20,0.55),rgba(11,14,20,0.7)),url('https://i.imgur.com/irRgz5r.png');
+      background-size:cover;background-position:center top;pointer-events:none;"></div>
     <div class="notif" id="notif"></div>
 
     <nav class="navbar">
@@ -312,18 +272,18 @@
         ></span>
         <div class="notif-wrap">
           <button class="nav-btn" onclick="window.location.href='amis.html'">
-            👥 <span class="btn-label">Amis</span>
+            👥 Amis
           </button>
           <span class="notif-dot" id="badge-amis">0</span>
         </div>
         <button class="nav-btn" onclick="window.location.href='objectifs.html'">
-          🎯 <span class="btn-label">Objectifs</span>
+          🎯 Objectifs
         </button>
         <button class="nav-btn" onclick="window.location.href='profil.html'">
           <div class="nav-avatar" id="top-avatar"></div>
-          <span id="top-avatar-name" class="btn-label"></span>
+          <span id="top-avatar-name"></span>
         </button>
-        <button class="nav-btn danger" onclick="doLogout()">⏻ <span class="btn-label">Déco</span></button>
+        <button class="nav-btn danger" onclick="doLogout()">⏻ Déco</button>
       </div>
     </nav>
 
