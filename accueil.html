@@ -232,7 +232,25 @@
       }
       @media (max-width: 500px) {
         .action-cards {
-          grid-template-columns: 1fr;
+          grid-template-columns: 1fr 1fr;
+          gap: 0.5rem;
+        }
+        .action-card {
+          padding: 0.7rem 0.6rem;
+        }
+        .action-card h3 {
+          font-size: 0.75rem;
+          margin-bottom: 0.4rem;
+        }
+        .action-card input {
+          padding: 0.5rem 0.7rem;
+          font-size: 0.8rem;
+          margin-bottom: 0.4rem;
+        }
+        .action-card .btn.full {
+          padding: 0.55rem 0.5rem;
+          font-size: 0.78rem;
+          border-radius: 10px;
         }
       }
       .action-card {
@@ -367,23 +385,32 @@
           line-height: 1.4 !important;
         }
 
-        /* Cartes de rôles : 3 par ligne, hauteur contrôlée */
+        /* Cartes de rôles : 3 par ligne, petites et propres */
         section div[style*="minmax(150px"] {
           grid-template-columns: repeat(3, 1fr) !important;
-          gap: 0.4rem !important;
+          gap: 0.35rem !important;
         }
         .role-card-img {
-          aspect-ratio: 2/3;
+          aspect-ratio: 3/4;
           overflow: hidden;
-          border-radius: 10px;
+          border-radius: 8px;
         }
         .role-card-img img {
           width: 100%;
           height: 100%;
           object-fit: cover;
-          object-position: center 20%;
+          object-position: center 15%;
           display: block;
-          border-radius: 10px;
+          border-radius: 8px;
+          transition: none;
+        }
+        /* Sur mobile : tap pour afficher la description */
+        .role-card-img .role-card-desc {
+          opacity: 0;
+          transition: opacity 0.2s;
+        }
+        .role-card-img.tapped .role-card-desc {
+          opacity: 1;
         }
 
         /* Titres de section moins imposants */
@@ -1489,6 +1516,19 @@
           setTimeout(() => (n.style.display = "none"), 3000);
         };
       } // fin _initAccueil
+
+      // ── Tap sur cartes de rôles (mobile) ─────────────────────────────────
+      document.querySelectorAll(".role-card-img").forEach(card => {
+        card.addEventListener("click", function(e) {
+          // Sur desktop le hover CSS suffit, sur mobile on toggle la classe
+          if (window.matchMedia("(max-width: 600px)").matches) {
+            const wasOpen = this.classList.contains("tapped");
+            // Fermer toutes les autres
+            document.querySelectorAll(".role-card-img.tapped").forEach(c => c.classList.remove("tapped"));
+            if (!wasOpen) this.classList.add("tapped");
+          }
+        });
+      });
     </script>
   </body>
 </html>
