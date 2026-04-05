@@ -254,6 +254,79 @@
         line-height: 1.4;
         margin-top: 3px;
       }
+
+      /* ══ MOBILE FIXES ══ */
+      @media (max-width: 768px) {
+        /* Fix background-attachment:fixed broken on mobile */
+        body {
+          background-attachment: scroll !important;
+          background-size: cover !important;
+          background-position: center top !important;
+        }
+
+        /* Hero image de fond sur mobile */
+        .hero {
+          background-image: linear-gradient(rgba(11,14,20,0.6), rgba(11,14,20,0.75)),
+            url("https://i.imgur.com/irRgz5r.png");
+          background-size: cover;
+          background-position: center top;
+          background-attachment: scroll;
+          min-height: 50vh;
+        }
+
+        /* Titre plus petit sur mobile */
+        .hero h1 {
+          font-size: 2.2rem !important;
+        }
+        .hero p {
+          font-size: 1rem !important;
+        }
+
+        /* Navbar mobile */
+        .navbar {
+          padding: 8px 12px;
+          flex-wrap: nowrap;
+        }
+        .navbar-brand {
+          font-size: 0.82rem;
+          max-width: 140px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .navbar-right {
+          gap: 4px;
+          flex-wrap: nowrap;
+          align-items: center;
+        }
+        .navbar-right > span {
+          display: none; /* cacher "Connecté : xxx" sur mobile */
+        }
+        .nav-btn {
+          padding: 5px 8px;
+          font-size: 0.75rem;
+        }
+        .nav-avatar {
+          width: 36px !important;
+          height: 36px !important;
+        }
+
+        /* Contenu principal */
+        .main-content {
+          padding: 0.5rem;
+        }
+
+        /* Classement */
+        .leaderboard-card {
+          padding: 0.75rem;
+        }
+      }
+
+      @media (max-width: 400px) {
+        .hero h1 { font-size: 1.8rem !important; }
+        .nav-btn span { display: none; }
+        .nav-btn { padding: 4px 6px; }
+      }
     </style>
   </head>
   <body style="position: relative">
