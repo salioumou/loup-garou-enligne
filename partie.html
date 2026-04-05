@@ -872,11 +872,31 @@
                 );
               }
             } else if (gs.phase === "vote" || gs.voteOpen) {
-              // Vote en cours
+              // Vote en cours - reconnecter le listener de votes
               G.chatOn = true;
               updateChat();
               document.getElementById("night-panel").style.display = "none";
-              if (!G.voteStarted) startVote();
+              if (!G.voteStarted) {
+                if (IS_HOST) startVote();
+                else {
+                  // Non-host: démarrer listener votes directement
+                  G.voteStarted = true;
+                  G.hasVoted = false;
+                  lockVoteBtn(false);
+                  showVoteBadge();
+                  renderVoteList();
+                  goTab("vote", document.getElementById("tbtn-vote"));
+                  document.getElementById("vote-cbar").style.display = "block";
+                  G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"), (snap) => {
+                    G.votes = snap.exists() ? snap.val() : {};
+                    renderVoteList();
+                    renderVoteSummary();
+                  });
+                  if (gs.phaseStart && gs.phaseDuration) {
+                    G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {});
+                  }
+                }
+              }
             }
             // Host reconnecte en pleine nuit → reprendre la séquence
             if (IS_HOST && gs.phase === "night" && gs.nightStepRole) {
@@ -930,16 +950,31 @@ if (IS_HOST) {
       document.body.appendChild(banner);
     }
 
-    if (absent > HOST_DEAD_MS) {
-      banner.style.display = "block";
-      banner.innerHTML = "⚠️ L'hôte est déconnecté depuis trop longtemps.<br><small>La partie est en pause jusqu'à son retour.</small>";
-    } else if (absent > HOST_ABSENT_MS) {
-      banner.style.display = "block";
-      banner.innerHTML = "⚠️ L'hôte semble absent (" + Math.floor(absent/60000) + " min). La partie peut se bloquer.";
+    if (absent > HOST_ABSENT_MS) {
+      // Transfert automatique au premier joueur vivant non-hôte
+      const alivePlayers = (s.players || []).filter(p => !p.isBot && p.id !== s.host && s.alive && s.alive[p.id] !== false);
+      // Prendre le joueur avec l'ID le plus petit (déterministe pour éviter conflits)
+      alivePlayers.sort((a,b) => a.id.localeCompare(b.id));
+      const newHost = alivePlayers[0];
+      if (newHost && newHost.id === ME.id) {
+        // C'est moi le nouveau host !
+        IS_HOST = true;
+        localStorage.setItem("lg_is_host", "true");
+        await update(ref(db, "salons/" + SID), { host: ME.id, hostName: ME.name, hostLastSeen: Date.now(), hostAbsent: false });
+        const hBtn = document.getElementById("host-panel-btn");
+        if (hBtn) hBtn.style.display = "flex";
+        addChat("🎖️ <em>" + ME.name + " est maintenant l'hôte (transfert automatique).</em>", true);
+        if (banner) banner.style.display = "none";
+      } else if (newHost) {
+        if (banner) {
+          banner.style.display = "block";
+          banner.innerHTML = "🔄 Transfert de l'hôte vers " + newHost.name + "…";
+        }
+      }
     } else {
-      banner.style.display = "none";
+      if (banner) banner.style.display = "none";
     }
-  }, 30000);
+  }, 20000);
 }
 
         onValue(ref(db, "salons/" + SID + "/gameState"), (snap) => {
@@ -2068,15 +2103,23 @@ if (IS_HOST) {
         document.getElementById("action-cbar").style.display = "none";
         if (window._hideNightTimer) window._hideNightTimer();
         G.forceAction = false;
-        goTab("village", null); // fermer l'overlay action
-        document.getElementById("wolf-vote-btn").style.display = "none";
-        document.getElementById("wolf-attack-btn").style.display = "none";
+        G.actDone = true;
+        G.actTgt = null;
+        // Fermer les panneaux d'action
+        goTab("village", null);
+        const ab = document.getElementById("wolf-attack-btn"); if(ab) ab.style.display = "none";
+        const vb = document.getElementById("wolf-vote-btn"); if(vb) vb.style.display = "none";
+        document.getElementById("wolf-private").style.display = "none";
+        G.chatOn = false;
+        updateChat();
+        if (!IS_HOST) {
+          // Non-host : signaler au host que l'action est terminée
+          update(ref(db, "salons/" + SID + "/gameState"), { nightStepDone: Date.now() });
+          return;
+        }
+        // HOST : avancer à l'étape suivante
         G.seqIdx++;
         G.actDone = false;
-        G.actTgt = null;
-        G.chatOn = false;
-        document.getElementById("wolf-private").style.display = "none";
-        updateChat();
         setTimeout(nextNightStep, 600);
       }
 
@@ -2357,6 +2400,7 @@ if (IS_HOST) {
         );
         soundVoteStart();
         showVoteBadge();
+        if (G.allowBots) scheduleBotsVote();
         showGameNotif(
           "🗳️",
           "C'est l'heure du vote ! Choisissez qui éliminer.",
@@ -3353,6 +3397,8 @@ if (IS_HOST) {
             }
             G.lovers = [G.loverA, t.id];
             const p1 = G.players.find((p) => p.id === G.loverA);
+            // Sauvegarder les amoureux dans Firebase pour reconnexion
+            update(ref(db, "salons/" + SID + "/gameState"), { lovers: G.lovers });
             addChat(
               "💘 <strong>" +
                 p1.name +
@@ -3921,6 +3967,25 @@ if (IS_HOST) {
         });
       }
 
+      function scheduleBotsVote() {
+        // Bots votent automatiquement après 2-5s
+        const alivePlayers = G.players.filter(p => G.alive[p.id] && p.id !== ME.id);
+        const botPlayers = G.players.filter(p => p.isBot && G.alive[p.id]);
+        if (!botPlayers.length) return;
+        botPlayers.forEach((bot, i) => {
+          setTimeout(() => {
+            if (!G.voteStarted || G.phase !== "day") return;
+            if (!alivePlayers.length) return;
+            // Bot vote pour un joueur aléatoire vivant (pas lui-même)
+            const targets = alivePlayers.filter(p => p.id !== bot.id);
+            if (!targets.length) return;
+            const target = targets[Math.floor(Math.random() * targets.length)];
+            const botSafeId = bot.id.replace(/\./g, "_");
+            set(ref(db, "salons/" + SID + "/votes/" + botSafeId), target.id);
+          }, (i + 1) * 2000 + Math.random() * 3000);
+        });
+      }
+
       function checkWin() {
         const alive = G.players.filter((p) => G.alive[p.id]);
         const wolves = alive.filter((p) =>
@@ -3977,6 +4042,13 @@ if (IS_HOST) {
       async function endGame(winner, desc) {
         clearIvals();
         stopAllMusic();
+        // Marquer le salon comme terminé pour nettoyage automatique
+        if (IS_HOST) {
+          update(ref(db, "salons/" + SID), { 
+            status: "finished", 
+            finishedAt: Date.now() 
+          });
+        }
         setTimeout(() => {
           if (winner === "village" || winner === "angel") soundVictoryVillage();
           else soundVictoryWolves();
@@ -4020,6 +4092,14 @@ if (IS_HOST) {
             color: "#ffffff",
             bg: "#050515",
             msg: "Le Loup Blanc a éliminé tous ses rivaux. Il règne seul sur Hurlebois…",
+          },
+          host_ended: {
+            title: "Partie terminée",
+            icon: "⏹️",
+            color: "#888",
+            bg: "#050505",
+            msg: "L'hôte a mis fin à la partie.",
+            img: "https://i.postimg.cc/cH0hfnjn/villagealaube.jpg",
           },
           flute: {
             title: "Victoire du Joueur de Flûte !",
