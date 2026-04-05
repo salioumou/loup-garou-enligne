@@ -148,6 +148,65 @@
         font-weight: 600;
         color: var(--accent);
       }
+
+      /* ── Mobile : cartes rôles plus petites + harmonisation ── */
+      @media (max-width: 768px) {
+        .hero {
+          min-height: 15vh !important;
+          padding: 1rem;
+        }
+        .hero h1 {
+          font-size: 1.6rem !important;
+        }
+        .hero p {
+          font-size: 0.85rem !important;
+        }
+        .stats-grid {
+          grid-template-columns: repeat(3, 1fr);
+          gap: 6px;
+          margin-bottom: 0.75rem;
+        }
+        .stat-card {
+          padding: 0.6rem 0.4rem;
+        }
+        .stat-card .label {
+          font-size: 0.62rem;
+        }
+        .stat-card .value {
+          font-size: 1.1rem;
+        }
+        #roles-config {
+          grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)) !important;
+          gap: 0.5rem !important;
+        }
+        #roles-config > div {
+          width: auto !important;
+        }
+        h3 {
+          font-size: 0.95rem !important;
+        }
+        .btn.secondary.full {
+          padding: 0.55rem 1rem;
+          font-size: 0.82rem;
+        }
+        .chat-box {
+          height: 160px;
+          font-size: 0.82rem;
+        }
+        h2 {
+          font-size: 1.2rem;
+        }
+        ::-webkit-scrollbar {
+          width: 3px;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: #252d3a;
+          border-radius: 3px;
+        }
+      }
     </style>
   </head>
   <body style="position: relative">
@@ -1305,14 +1364,14 @@
             position:relative;border-radius:10px;overflow:visible;
             border:2px solid ${active ? "var(--accent)" : "#252d3a"};
             transition:0.2s;opacity:${active ? 1 : 0.55};
-            width:90px;flex-shrink:0;display:flex;flex-direction:column;
+            width:clamp(72px,18vw,90px);flex-shrink:0;display:flex;flex-direction:column;
           ">
             <div style="position:relative;border-radius:8px;overflow:hidden">
               <img src="${
                 r.img
-              }" style="width:100%;display:block;height:118px;object-fit:cover;object-position:top"/>
+              }" style="width:100%;display:block;height:clamp(90px,22vw,118px);object-fit:cover;object-position:top"/>
               <div style="position:absolute;inset:0;background:linear-gradient(transparent 50%,rgba(0,0,0,0.92));display:flex;flex-direction:column;justify-content:flex-end;padding:4px 3px">
-                <div style="font-size:0.52rem;color:#ddd;text-align:center;line-height:1.2;font-family:'Cinzel',serif">${
+                <div style="font-size:clamp(0.48rem,1.8vw,0.55rem);color:#ddd;text-align:center;line-height:1.2;font-family:'Cinzel',serif">${
                   r.name
                 }</div>
               </div>
