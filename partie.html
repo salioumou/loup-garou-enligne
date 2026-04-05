@@ -1041,11 +1041,24 @@ if (IS_HOST) {
                   "☀️ Discussion";
                 document.getElementById("cbar-fill").style.background =
                   "var(--accent)";
-                // Non-host: message géré par le host via addChat dans startDay()
                 const abDay = document.getElementById("wolf-attack-btn"); if(abDay) abDay.style.display = "none";
                 const vbDay2 = document.getElementById("wolf-vote-btn"); if(vbDay2) vbDay2.style.display = "none";
                 const bannDay = document.getElementById("wolf-vote-btn"); if(bannDay) bannDay.style.display = "none";
                 setPhaseInfo("☀️ Phase de discussion");
+
+                // ── FIX 3 : Transition jour + fond pour les NON-HÔTES ────────
+                // L'hôte appelle setPageBg("day") et showDayTransition dans startDay()
+                // Les non-hôtes reçoivent la phase via Firebase mais n'avaient pas ces appels
+                setPageBg("day");
+                if (prevPhase === "night" || prevPhase === "resolving") {
+                  const ambDay = DAY_AMBIANCE[G.turn % DAY_AMBIANCE.length] || "";
+                  showDayTransition(
+                    "☀️ L'aube se lève sur Hurlebois",
+                    ambDay,
+                    null
+                  );
+                }
+
                 goTab("village", document.getElementById("tbtn-village"));
                 G.ivals.main = startTimerFromTs(
                   gs.phaseStart,
@@ -1173,11 +1186,25 @@ if (IS_HOST) {
               ? NIGHT_SEQ.find(s => s.l === gs.nightStepLabel)
               : null;
             const img = seq ? seq.img : null;
+
+            // ── FIX 1 : Chronomètre visible par TOUS les joueurs ──────────
             if (window._showNightTimer) {
               window._showNightTimer(
                 gs.nightStepLabel,
                 gs.nightStepStart,
                 gs.nightStepDuration,
+                img
+              );
+            }
+
+            // ── FIX 2 : Carte d'annonce de rôle pour les NON-HÔTES ───────
+            // L'hôte appelle showNightTransition() directement dans nextNightStep()
+            // Les non-hôtes le reçoivent ici via Firebase
+            if (!IS_HOST && seq) {
+              showNightTransition(
+                gs.nightStepLabel + " se réveille…",
+                seq.d || "",
+                null,
                 img
               );
             }
