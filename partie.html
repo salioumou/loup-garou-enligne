@@ -1058,8 +1058,8 @@ if (IS_HOST) {
                 // L'hôte appelle setPageBg("day") et showDayTransition dans startDay()
                 // Les non-hôtes reçoivent la phase via Firebase mais n'avaient pas ces appels
                 setPageBg("day");
-                // FIX musique : démarrer la musique de jour pour les non-hôtes
-                _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
+                // Musique jour gérée par deathAnnounce (showNightBilan callback)
+                // pour éviter que le coq joue deux fois
                 if (prevPhase === "night" || prevPhase === "resolving") {
                   const ambDay = DAY_AMBIANCE[G.turn % DAY_AMBIANCE.length] || "";
                   showDayTransition(
@@ -1108,21 +1108,33 @@ if (IS_HOST) {
 
           if (gs.deathAnnounce && gs.deathAnnounce !== G.lastDeathAnnounce) {
             G.lastDeathAnnounce = gs.deathAnnounce;
-            if (!IS_HOST && gs.deadThisTurn) {
-              gs.deadThisTurn.forEach((d) => {
+            if (!IS_HOST) {
+              const deadList = gs.deadThisTurn || [];
+
+              // Marquer les morts localement
+              deadList.forEach((d) => {
                 const p = G.players.find((x) => x.id === d.id);
-                if (p) {
-                  G.alive[p.id] = false;
-                  addChat(
-                    "💀 <strong style=\"color:#ff8888;font-size:1.05rem\">" +
-                      p.name +
-                      "</strong> — <strong>" + d.reason + "</strong>",
-                    true
-                  );
-                }
+                if (p) G.alive[p.id] = false;
               });
               renderPanels();
               renderInfoPlayers();
+
+              if (deadList.length === 0) {
+                // Personne n'est mort : coq + musique + jour directement
+                _loadSoundsJs(function() {
+                  if (!musicMuted) startDayMusic();
+                });
+                // startDay() sera déclenché par phase:"day" via Firebase
+              } else {
+                // FIX : afficher le bilan visuel (cartes des morts) pour les non-hôtes
+                showNightBilan(deadList, () => {
+                  // Coq + musique jour après le bilan
+                  _loadSoundsJs(function() {
+                    if (!musicMuted) startDayMusic();
+                  });
+                  // startDay() sera déclenché par phase:"day" via Firebase
+                });
+              }
             }
           }
 
@@ -2490,7 +2502,9 @@ if (IS_HOST) {
         G.chatOn = true;
         updateChat();
 
-        setTimeout(() => startDayMusic(), 500);
+        // FIX musique : coq puis musique jour pour l'hôte (via startDayMusic)
+        // Pour les non-hôtes, c'est géré dans deathAnnounce → showNightBilan callback
+        _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
         // FIX double msg : seul l'hôte écrit ce message
         if (IS_HOST) addChat("☀️ <strong>Jour " + G.turn + "</strong> — Débattez, accusez, votez !", true);
 
