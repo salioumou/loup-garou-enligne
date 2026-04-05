@@ -376,12 +376,20 @@
 
           // Récupérer le profil depuis la DB
           const snap = await get(ref(db, "users/" + uid));
+          let user;
           if (!snap.exists()) {
-            showErr("Profil introuvable. Contactez l'admin.");
-            setLoading("btn-login", false, "Se connecter");
-            return;
+            // Profil manquant → le créer automatiquement
+            user = {
+              id: uid,
+              name: cred.user.displayName || email.split("@")[0],
+              email,
+              stats: { games: 0, wins: 0, wolvesKilled: 0 },
+              created: Date.now(),
+            };
+            await set(ref(db, "users/" + uid), user);
+          } else {
+            user = snap.val();
           }
-          const user = snap.val();
           localStorage.setItem(SESSION_KEY, JSON.stringify(user));
           window.location.href = "accueil.html";
         } catch (e) {
