@@ -1095,14 +1095,9 @@ if (IS_HOST) {
               if (gs.phase === "night") {
                 G.chatOn = false;
                 updateChat();
-                // FIX non-hôtes : déclencher runNight() quand l'hôte passe en nuit
-                // L'hôte appelle runNight() directement — les non-hôtes attendent Firebase
                 if (!IS_HOST && !G._nightRunning) {
                   G._nightRunning = true;
-                  // Musique nuit pour les non-hôtes
-                  if (_soundsLoaded && !musicMuted) {
-                    _loadSoundsJs(function() { startNightMusic(); });
-                  }
+                  _loadSoundsJs(function() { if (!musicMuted) startNightMusic(); });
                   runNight();
                 }
               }
@@ -1227,30 +1222,32 @@ if (IS_HOST) {
             }
           }
 
-          if (gs.voteOpen && !G.voteListening && !IS_HOST) {
-            G.voteListening = true;
-            if (!G.voteStarted) {
+          if (gs.voteOpen && !IS_HOST) {
+            // FIX timer vote : démarrer dès qu'on a voteOpen ET phaseStart
+            if (!G.voteStarted && gs.phaseStart && gs.phaseDuration) {
               G.voteStarted = true;
+              G.voteListening = true;
               G.hasVoted = false;
               lockVoteBtn(false);
               showVoteBadge();
               renderVoteList();
               goTab("vote", document.getElementById("tbtn-vote"));
-              document.getElementById("vote-cbar").style.display = "block";
-              document.getElementById("vote-desc").textContent = "Choisissez le joueur à éliminer :";
+              const vcbar = document.getElementById("vote-cbar");
+              if (vcbar) vcbar.style.display = "block";
+              const vdesc = document.getElementById("vote-desc");
+              if (vdesc) vdesc.textContent = "Choisissez le joueur à éliminer :";
+              const fill = document.getElementById("vote-fill");
+              if (fill) { fill.style.background = "#be6d6d"; fill.style.width = "100%"; }
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
                 (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
               );
-              if (gs.phaseStart && gs.phaseDuration) {
-                const fill = document.getElementById("vote-fill");
-                if (fill) fill.style.background = "#be6d6d";
-                clearInterval(G.ivals.vote);
-                G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {
-                  document.getElementById("vote-cbar").style.display = "none";
-                  if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-                });
-              }
+              clearInterval(G.ivals.vote);
+              G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {
+                const vc2 = document.getElementById("vote-cbar");
+                if (vc2) vc2.style.display = "none";
+                if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+              });
             }
           }
 
@@ -1264,6 +1261,7 @@ if (IS_HOST) {
           }
         });
         let _timerLastKey = null;
+        let _lastNightTurn = -1; // pour détecter un nouveau tour de nuit
         onValue(ref(db, "salons/" + SID + "/gameState"), (snap) => {
           if (!snap.exists()) return;
           const gs = snap.val();
@@ -1276,35 +1274,32 @@ if (IS_HOST) {
             return;
           }
 
+          // FIX boucle cartes : détecter un nouveau tour et réinitialiser la clé
+          const currentTurn = gs.turn || 1;
+          if (currentTurn !== _lastNightTurn) {
+            _lastNightTurn = currentTurn;
+            _timerLastKey = null; // reset pour ce nouveau tour de nuit
+          }
+
           if (gs.nightStepStart && gs.nightStepDuration && gs.nightStepLabel) {
             const key = gs.nightStepStart + "|" + gs.nightStepLabel;
-            if (key === _timerLastKey) return; // déjà affiché
+            if (key === _timerLastKey) return; // déjà affiché pour cette étape
             _timerLastKey = key;
+
             const seq = (typeof NIGHT_SEQ !== "undefined")
               ? NIGHT_SEQ.find(s => s.l === gs.nightStepLabel)
               : null;
             const img = seq ? seq.img : null;
 
-            // ── FIX 1 : Chronomètre visible par TOUS les joueurs ──────────
+            // Chronomètre visible par TOUS
             if (window._showNightTimer) {
-              window._showNightTimer(
-                gs.nightStepLabel,
-                gs.nightStepStart,
-                gs.nightStepDuration,
-                img
-              );
+              window._showNightTimer(gs.nightStepLabel, gs.nightStepStart, gs.nightStepDuration, img);
             }
 
-            // ── FIX 2 : Carte d'annonce de rôle pour les NON-HÔTES ───────
-            // L'hôte appelle showNightTransition() directement dans nextNightStep()
-            // Les non-hôtes le reçoivent ici via Firebase
+            // Carte d'annonce pour les NON-HÔTES uniquement
+            // L'hôte l'affiche directement dans nextNightStep()
             if (!IS_HOST && seq) {
-              showNightTransition(
-                gs.nightStepLabel + " se réveille…",
-                seq.d || "",
-                null,
-                img
-              );
+              showNightTransition(gs.nightStepLabel + " se réveille…", seq.d || "", null, img);
             }
           } else {
             if (_timerLastKey !== "waiting") {
@@ -1749,10 +1744,25 @@ if (IS_HOST) {
         Object.keys(vols).forEach(function(k){ if (SOUNDS[k]) SOUNDS[k].volume = vols[k]; });
       }
 
+      // ── File d'attente audio : sons demandés avant le chargement ──────
+      var _pendingSounds = [];
+      var _soundsInitialized = false;
+
       // ── Fonction centrale audio ──────────────────────────────────────────
-      // Charge sounds.js si besoin, débloque AudioContext, joue le son, retry si suspendu
       function _safePlay(key, opts) {
         opts = opts || {};
+        if (!_soundsLoaded) {
+          // Mettre en file d'attente si sounds.js pas encore chargé
+          if (!opts.isBg) _pendingSounds.push({ key: key, opts: opts });
+          _loadSoundsJs(function() {
+            _initSoundVolumes();
+            _soundsInitialized = true;
+            // Rejouer tous les sons en attente
+            var pending = _pendingSounds.splice(0);
+            pending.forEach(function(p) { _safePlay(p.key, p.opts); });
+          });
+          return;
+        }
         _loadSoundsJs(function() {
           _initSoundVolumes();
           var s = SOUNDS[key];
@@ -2592,9 +2602,11 @@ if (IS_HOST) {
         lockVoteBtn(false);
         if (IS_HOST) {
           const voteStart = Date.now();
-          const voteDur = parseInt(localStorage.getItem("lg_vote_duration") || 60);
+          const voteDur = parseInt(localStorage.getItem("lg_vote_duration") || 15);
+          // FIX : écrire phaseStart ET voteOpen dans le même update
+          // pour que les non-hôtes aient les deux infos simultanément
           update(ref(db, "salons/" + SID + "/gameState"), {
-            phase: "day",
+            phase: "vote",
             voteOpen: true,
             alive: Object.assign({}, G.alive),
             turn: G.turn,
