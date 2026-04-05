@@ -491,19 +491,45 @@ footer {
 }
 
 @media (max-width: 768px) {
+  html {
+    font-size: 15px;
+  }
+  h1 {
+    font-size: 1.8rem;
+  }
+  h2 {
+    font-size: 1.4rem;
+  }
   .hero h1 {
-    font-size: 2.2rem;
+    font-size: 2rem;
   }
   .hero p {
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
   .main-container {
     flex-direction: column;
+    padding: 1rem 0.75rem;
+    gap: 1rem;
   }
   .rules-container {
     max-height: none;
   }
   .stats-grid {
     grid-template-columns: 1fr 1fr;
+  }
+  .user-bar {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 0.5rem 1rem;
+    background: rgba(11,14,20,0.95);
+    border-bottom: 1px solid #1e2535;
+  }
+  .user-bar span {
+    width: 100%;
+    font-size: 0.82rem;
+    text-align: right;
   }
 }
