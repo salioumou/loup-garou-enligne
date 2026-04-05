@@ -1664,7 +1664,8 @@ if (IS_HOST) {
           "🌙 La nuit tombe sur Hurlebois…",
           "Les créatures de l'ombre s'éveillent. Personne n'est en sécurité…",
           () => {
-            addChat(
+            // FIX double msg : seul l'hôte écrit ce message
+            if (IS_HOST) addChat(
               "🌙 <strong>Nuit 1</strong> — Le village s'endort. Les rôles spéciaux agissent en secret...",
               true
             );
@@ -1767,11 +1768,17 @@ if (IS_HOST) {
 
       function broadcastSound(key) {
         if (!musicMuted && SOUNDS[key]) {
-          // Baisse la musique de fond pendant l'effet
+          // FIX sons : débloquer AudioContext avant play
+          if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
           const bgKeys = ["night","day"];
           bgKeys.forEach(function(k){ if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08; });
           SOUNDS[key].currentTime = 0;
-          SOUNDS[key].play().catch(function(e){console.warn("[AUDIO] failed:", key, e);});
+          SOUNDS[key].play().catch(function(e){
+            console.warn("[AUDIO] failed:", key, e);
+            if (AC && AC.state === "suspended") {
+              AC.resume().then(function(){ SOUNDS[key].currentTime = 0; SOUNDS[key].play().catch(function(){}); });
+            }
+          });
           var dur = (SOUNDS[key].duration && isFinite(SOUNDS[key].duration) ? SOUNDS[key].duration : 6) * 1000;
           setTimeout(function(){
             SOUNDS.night.volume = 0.5;
@@ -1787,14 +1794,25 @@ if (IS_HOST) {
 
       function playSound(key) {
         if (musicMuted) return;
+        if (!_soundsLoaded) {
+          // Sons pas encore chargés : charger puis rejouer
+          _loadSoundsJs(function() { _initSoundVolumes(); playSound(key); });
+          return;
+        }
         const s = SOUNDS[key];
         if (!s) { console.warn("[AUDIO] SOUND NOT FOUND:", key); return; }
-        // Baisse la musique de fond pendant l'effet
+        // FIX sons : débloquer AudioContext avant play (requis iOS Safari)
+        if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
         const bgKeys = ["night","day"];
         bgKeys.forEach(k => { if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08; });
         s.currentTime = 0;
-        s.play().catch((e) => {console.warn("[AUDIO] failed:", key, e);});
-        // Restaure le volume après la durée du son (max 35s)
+        s.play().catch((e) => {
+          console.warn("[AUDIO] failed:", key, e);
+          // Réessayer après déverrouillage
+          if (AC && AC.state === "suspended") {
+            AC.resume().then(() => { s.currentTime = 0; s.play().catch(()=>{}); });
+          }
+        });
         const dur = (s.duration && isFinite(s.duration) ? s.duration : 6) * 1000;
         setTimeout(() => {
           SOUNDS.night.volume = 0.5;
@@ -2009,7 +2027,8 @@ if (IS_HOST) {
         updateUI();
         document.getElementById("night-panel").style.display = "block";
         const ambMsg = NIGHT_AMBIANCE[G.turn % NIGHT_AMBIANCE.length];
-        setTimeout(() => addChat(`🌙 <em>${ambMsg}</em>`, true), 500);
+        // FIX double msg : seul l'hôte écrit les messages d'ambiance
+        if (IS_HOST) setTimeout(() => addChat(`🌙 <em>${ambMsg}</em>`, true), 500);
         createMuteBtn();
         setTimeout(() => startNightMusic(), 800);
         if (IS_HOST) {
@@ -2124,7 +2143,8 @@ if (IS_HOST) {
           cur.l + " se réveille…",
           cur.d,
           () => {
-            addChat(
+            // FIX double msg : seul l'hôte écrit ce message
+            if (IS_HOST) addChat(
               `<img src="${cur.img}" style="width:20px;height:28px;border-radius:3px;vertical-align:middle;margin-right:4px"/> <em>${cur.l} agit dans l'ombre...</em>`,
               true
             );
@@ -2347,7 +2367,8 @@ if (IS_HOST) {
             });
             dead = [...dead, ...extraDead];
             if (!dead.length) {
-              addChat(
+              // FIX double msg : seul l'hôte écrit dans le chat Firebase
+              if (IS_HOST) addChat(
                 "🌅 Cette nuit, <strong>personne n'est mort</strong> ! Le village est soulagé.",
                 true
               );
@@ -2435,7 +2456,8 @@ if (IS_HOST) {
         updateChat();
 
         setTimeout(() => startDayMusic(), 500);
-        addChat("☀️ <strong>Jour " + G.turn + "</strong> — Débattez, accusez, votez !", true);
+        // FIX double msg : seul l'hôte écrit ce message
+        if (IS_HOST) addChat("☀️ <strong>Jour " + G.turn + "</strong> — Débattez, accusez, votez !", true);
 
         // Voyante Bavarde : révélation de la nuit précédente
         if (G.vbReveal && G.vbReveal.turn === G.turn - 1) {
@@ -2514,7 +2536,8 @@ if (IS_HOST) {
             phaseDuration: voteDur,
           });
         }
-        addChat(
+        // FIX double msg : seul l'hôte écrit ce message
+        if (IS_HOST) addChat(
           "🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?",
           true
         );
@@ -3269,15 +3292,16 @@ if (IS_HOST) {
             return;
           }
           const r = RDATA[t.role] || RDATA.villager;
-          addChat(
-            "🔮 <strong>" +
-              t.name +
-              "</strong> est " +
-              (r.t === "wolves"
-                ? "🐺 un Loup-Garou !"
-                : "✅ du côté du Village."),
-            true
-          );
+          // FIX VOYANTE : message privé local uniquement (pas dans Firebase)
+          // La voyante NORMALE ne révèle rien publiquement — contrairement à la Bavarde
+          const seerMsgDiv = document.createElement("div");
+          seerMsgDiv.className = "msg sys";
+          seerMsgDiv.innerHTML = "🔮 <strong>" + t.name + "</strong> est " +
+            (r.t === "wolves"
+              ? "<span style='color:#be6d6d'>🐺 un Loup-Garou !</span>"
+              : "<span style='color:#6dbe6d'>✅ du côté du Village.</span>");
+          const gc = document.getElementById("game-chat");
+          if (gc) { gc.appendChild(seerMsgDiv); gc.scrollTop = gc.scrollHeight; }
           addJournal(
             "Voyante : " +
               t.name +
