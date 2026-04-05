@@ -772,6 +772,14 @@
       };
 
       async function init() {
+        // FIX sons : charger sounds.js dès le début de la partie
+        // (pas uniquement au premier clic — les sons Firebase arrivent avant)
+        _loadSoundsJs(function() {
+          _initSoundVolumes();
+          // Tenter de débloquer l'AudioContext si possible
+          if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
+        });
+
         const snap = await get(salonRef);
         if (!snap.exists()) {
           window.location.href = "accueil.html";
@@ -1112,6 +1120,59 @@ if (IS_HOST) {
             endGame(gs.winner, gs.winDesc || "");
           }
 
+          // FIX VOTE : traitement du résultat de vote pour TOUS les joueurs
+          if (gs.voteResult && gs.voteResult.ts && gs.voteResult.ts !== G._lastVoteResultTs) {
+            G._lastVoteResultTs = gs.voteResult.ts;
+            const vr = gs.voteResult;
+
+            // Aucun éliminé (personne n'a voté ou pas de résultat)
+            if (!vr.eliminated) {
+              addChat("⏰ <em>Personne n'a voté — la nuit tombe sans élimination.</em>", true);
+              document.getElementById("vote-cbar").style.display = "none";
+              if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+              G.voteStarted = false;
+              G.voteListening = false;
+              setTimeout(() => { if (!G.gameEnded) runNight(); }, 1000);
+              return;
+            }
+
+            // Il y a un éliminé
+            const t = G.players.find(p => p.id === vr.eliminated);
+            if (!t || G._voteResultHandled === vr.ts) return;
+            G._voteResultHandled = vr.ts;
+
+            document.getElementById("vote-cbar").style.display = "none";
+            if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+            G.voteStarted = false;
+            G.voteListening = false;
+
+            showVoteResult(vr.tally || {}, t, vr.maxVotes || 0, () => {
+              kill(t.id);
+              addJournal(t.name + " éliminé par vote (Jour " + G.turn + ") — " + (RDATA[t.role] || RDATA.villager).n);
+
+              // Ancien exécuté par le village
+              if ((t.role === "ancien" || t.role === "ancient") && !G.ancienKilled) {
+                G.ancienKilled = true;
+                G.players.forEach(p => {
+                  if (["seer","voyantebavarde","witch","savior","hunter","corbeau",
+                       "montreurdours","littlegirl","joueurdeflute","cupid"].includes(p.role)) {
+                    p.powerLost = true;
+                  }
+                });
+                addChat("🧓💥 <strong>L'Ancien a été exécuté par le village !</strong> Dans un dernier souffle, il maudit ses bourreaux… <strong>Tous les pouvoirs du village disparaissent !</strong>", true);
+              }
+
+              renderPanels();
+              renderInfoPlayers();
+              showDeathScreen(t, "éliminé par le vote du village", () => {
+                if (!G.gameEnded && !checkWin()) {
+                  if (t.role === "hunter" && !t.powerLost) fireHunter(t, () => { if (IS_HOST) runNight(); });
+                  else { if (IS_HOST) runNight(); }
+                }
+              });
+            });
+          }
+
           if (gs.voteOpen && !G.voteListening && !IS_HOST) {
             G.voteListening = true;
             // Non-host: démarrer le vote avec le timer synchronisé depuis Firebase
@@ -1149,19 +1210,25 @@ if (IS_HOST) {
           if (gs.soundEvent && gs.soundTs && gs.soundTs !== _lastSoundTs) {
             _lastSoundTs = gs.soundTs;
             if (Math.abs(gs.soundTs - _lastBroadcastTs) > 300) {
-              if (!musicMuted && SOUNDS[gs.soundEvent]) {
-                const _sk = gs.soundEvent;
-                const _snd = SOUNDS[_sk];
-                // Baisse la musique de fond
-                ["night","day"].forEach(function(k){ if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08; });
-                _snd.currentTime = 0;
-                _snd.play().catch(function(){});
-                var _dur = (_snd.duration && isFinite(_snd.duration) ? _snd.duration : 6) * 1000;
-                setTimeout(function(){
-                  SOUNDS.night.volume = 0.5;
-                  SOUNDS.day.volume = 0.45;
-                }, Math.min(_dur + 500, 35000));
-              }
+              // FIX sons : charger sounds.js si pas encore chargé, puis jouer
+              _loadSoundsJs(function() {
+                _initSoundVolumes();
+                if (!musicMuted && SOUNDS[gs.soundEvent]) {
+                  const _sk = gs.soundEvent;
+                  const _snd = SOUNDS[_sk];
+                  // Tenter de débloquer l'AudioContext (requis sur mobile Safari)
+                  if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
+                  // Baisse la musique de fond
+                  ["night","day"].forEach(function(k){ if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08; });
+                  _snd.currentTime = 0;
+                  _snd.play().catch(function(e){ console.warn("[AUDIO] son Firebase:", _sk, e); });
+                  var _dur = (_snd.duration && isFinite(_snd.duration) ? _snd.duration : 6) * 1000;
+                  setTimeout(function(){
+                    SOUNDS.night.volume = 0.5;
+                    SOUNDS.day.volume = 0.45;
+                  }, Math.min(_dur + 500, 35000));
+                }
+              });
             }
           }
         });
@@ -2162,7 +2229,10 @@ if (IS_HOST) {
       function advNight() {
         clearInterval(G.ivals.action);
         document.getElementById("action-cbar").style.display = "none";
-        if (window._hideNightTimer) window._hideNightTimer();
+        // FIX chrono : seul l'hôte cache le timer ici.
+        // Les non-hôtes ont leur timer géré par le onValue Firebase (nightStepStart).
+        // Si un non-hôte cache le timer ici, il ne revient plus pour les étapes suivantes.
+        if (IS_HOST && window._hideNightTimer) window._hideNightTimer();
         G.forceAction = false;
         G.actDone = true;
         G.actTgt = null;
@@ -2504,11 +2574,10 @@ if (IS_HOST) {
           "vote-time",
           () => {
             document.getElementById("vote-cbar").style.display = "none";
-            if (G.voteListener) {
-              G.voteListener();
-              G.voteListener = null;
-            }
-            resolveVotes();
+            if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+            // FIX VOTE : seul l'hôte résout les votes à la fin du timer
+            if (IS_HOST) resolveVotes();
+            // Les non-hôtes attendent voteResult via Firebase (onValue ci-dessous)
           }
         );
       }
@@ -2635,29 +2704,18 @@ if (IS_HOST) {
 
       window.castVote = function () {
         if (!G.selVote || G.hasVoted) return;
-        // 🔒 SÉCURITÉ : vérification que le joueur est bien vivant au moment
-        // de confirmer (selVote vérifie aussi, mais castVote est appelable
-        // directement depuis la console — cette garde double est nécessaire).
-        if (!G.alive[ME.id]) {
-          showNotif("❌ Les morts ne votent pas !");
-          return;
-        }
-        // Vérification que le vote cible un joueur vivant (pas une cible morte)
+        if (!G.alive[ME.id]) { showNotif("❌ Les morts ne votent pas !"); return; }
         if (G.selVote && !G.alive[G.selVote]) {
           showNotif("❌ Ce joueur est déjà mort !");
-          G.selVote = null;
-          lockVoteBtn(true);
-          return;
+          G.selVote = null; lockVoteBtn(true); return;
         }
+        // FIX VOTE : on enregistre juste le vote dans Firebase.
+        // On N'appelle plus resolveVotes() ici — seul l'hôte le fait à la fin du timer.
         G.hasVoted = true;
         lockVoteBtn(true);
-        clearInterval(G.ivals.vote);
-        document.getElementById("vote-cbar").style.display = "none";
-        if (G.voteListener) {
-          G.voteListener();
-          G.voteListener = null;
-        }
-        resolveVotes();
+        const safeId = ME.id.replace(/\./g, "_");
+        set(ref(db, "salons/" + SID + "/votes/" + safeId), G.selVote);
+        showNotif("✅ Vote enregistré ! En attente des autres joueurs…");
       };
 
       function resolveVotes() {
@@ -2721,7 +2779,8 @@ if (IS_HOST) {
           G.ivals.vote = startTimerFromTs(runoffStart, RUNOFF_DURATION, "vote-fill", "vote-time", () => {
             document.getElementById("vote-cbar").style.display = "none";
             if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-            resolveVotes();
+            // FIX VOTE : seul l'hôte résout le 2ème tour
+            if (IS_HOST) resolveVotes();
           });
           return;
         }
@@ -2739,50 +2798,29 @@ if (IS_HOST) {
 
         G.isRunoff = false;
         G.runoffCandidates = null;
-        const eliminated =
-          candidates[Math.floor(Math.random() * candidates.length)];
+        const eliminated = candidates[Math.floor(Math.random() * candidates.length)];
         const t = G.players.find((p) => p.id === eliminated);
         if (!t) {
           set(ref(db, "salons/" + SID + "/votes"), null);
-          runNight();
+          // FIX VOTE : broadcaster que personne n'est éliminé → nuit
+          update(ref(db, "salons/" + SID + "/gameState"), {
+            voteResult: { eliminated: null, tally: tally, ts: Date.now() }
+          });
           return;
         }
-        showVoteResult(tally, t, maxVotes, () => {
-          set(ref(db, "salons/" + SID + "/votes"), null);
-          kill(t.id);
-          addJournal(
-            t.name +
-              " éliminé par vote (Jour " +
-              G.turn +
-              ") — " +
-              (RDATA[t.role] || RDATA.villager).n
-          );
-
-          // Ancien exécuté par le village → tous les rôles perdent leurs pouvoirs
-          if ((t.role === "ancien" || t.role === "ancient") && !G.ancienKilled) {
-            G.ancienKilled = true;
-            // Retirer les pouvoirs : voyante, sorcière, salvateur, chasseur, etc.
-            G.players.forEach(p => {
-              if (["seer","voyantebavarde","witch","savior","hunter","corbeau",
-                   "montreurdours","littlegirl","joueurdeflute","cupid"].includes(p.role)) {
-                p.powerLost = true;
-              }
-            });
-            addChat(
-              `🧓💥 <strong>L'Ancien a été exécuté par le village !</strong> Dans un dernier souffle, il maudit ses bourreaux… <strong>Tous les pouvoirs du village disparaissent !</strong>`,
-              true
-            );
-            addJournal("L'Ancien exécuté — tous les pouvoirs perdus");
+        // FIX VOTE : l'hôte écrit le résultat dans Firebase
+        // Tous les joueurs (y compris l'hôte) le lisent via onValue et affichent
+        // showVoteResult au même moment
+        set(ref(db, "salons/" + SID + "/votes"), null);
+        update(ref(db, "salons/" + SID + "/gameState"), {
+          voteResult: {
+            eliminated: t.id,
+            eliminatedRole: t.role,
+            eliminatedName: t.name,
+            tally: tally,
+            maxVotes: maxVotes,
+            ts: Date.now()
           }
-
-          renderPanels();
-          renderInfoPlayers();
-          showDeathScreen(t, "éliminé par le vote du village", () => {
-            if (!checkWin()) {
-              if (t.role === "hunter" && !t.powerLost) fireHunter(t, () => runNight());
-              else runNight();
-            }
-          });
         });
       }
 
