@@ -889,7 +889,18 @@ if (IS_HOST) {
           // Voyante Bavarde a joué → avancer l'étape pour tous
           if (gs.nightStepDone && gs.nightStepDone !== G._lastNightStepDone && G.phase === "night") {
             G._lastNightStepDone = gs.nightStepDone;
-            if (!IS_HOST) setTimeout(() => advNight(), 1200);
+            if (IS_HOST) {
+              // Un joueur a terminé son action → host avance à l'étape suivante
+              setTimeout(() => {
+                G.seqIdx++;
+                G.actTgt = null;
+                G.actDone = true;
+                G.chatOn = false;
+                const wp = document.getElementById("wolf-private"); if(wp) wp.style.display = "none";
+                updateChat();
+                setTimeout(nextNightStep, 600);
+              }, 800);
+            }
           }
           // Exclusion par l'hôte : rediriger le joueur exclu
           if (gs.kickedPlayer && gs.kickedPlayer === ME.id) {
@@ -1058,6 +1069,54 @@ if (IS_HOST) {
           } else if (gs.phase !== "night" && _timerLastKey !== "hidden") {
             _timerLastKey = "hidden";
             if (window._hideNightTimer) window._hideNightTimer();
+          }
+
+          // ── Action du joueur non-host : afficher le panneau si c'est son tour ──
+          if (!IS_HOST && gs.phase === "night" && gs.nightStepRole && gs.nightStepStart) {
+            const _stepKey = gs.nightStepStart + "|" + gs.nightStepRole;
+            if (_stepKey !== G._lastShownStep) {
+              G._lastShownStep = _stepKey;
+              // Synchroniser le timestamp de début depuis Firebase
+              G._curStepStart = gs.nightStepStart;
+              const isMyTurn = (
+                G.myRole === gs.nightStepRole ||
+                // Loups : wolf, whitewolf, grandmechant voient tous le panneau loups
+                (gs.nightStepRole === "wolf" && ["wolf","whitewolf","grandmechant"].includes(G.myRole))
+              );
+              const isAlive = G.alive[ME.id] !== false;
+              if (isMyTurn && isAlive) {
+                const _cur = (typeof NIGHT_SEQ !== "undefined") ? NIGHT_SEQ.find(s => s.r === gs.nightStepRole) : null;
+                // Son spécifique selon le rôle
+                if (G.myRole === "witch") playSound("witch");
+                else if (G.myRole === "littlegirl") playSound("littlegirl");
+                else soundYourTurn();
+                showGameNotif("🔔", "C'est votre tour d'agir !", 3000);
+                if (G.myRole === "wolf" || G.myRole === "whitewolf" || G.myRole === "grandmechant") {
+                  G.chatOn = true;
+                  document.getElementById("wolf-private").style.display = "block";
+                  updateChat();
+                  G.forceAction = false;
+                  renderAction();
+                  if (_cur) showActionBar(_cur.s);
+                  const voteBtn = document.getElementById("wolf-vote-btn");
+                  if (voteBtn) voteBtn.style.display = "block";
+                  const attackBtn = document.getElementById("wolf-attack-btn");
+                  if (attackBtn) attackBtn.style.display = "flex";
+                } else {
+                  G.forceAction = true;
+                  goTab("action", document.getElementById("tbtn-action"));
+                  renderAction();
+                  if (_cur) showActionBar(_cur.s);
+                }
+              } else if (!isMyTurn) {
+                // Pas mon tour : cacher le chat loup et le panneau d'action
+                G.chatOn = false;
+                updateChat();
+                document.getElementById("wolf-private").style.display = "none";
+                const ab = document.getElementById("wolf-attack-btn"); if(ab) ab.style.display = "none";
+                const vb2 = document.getElementById("wolf-vote-btn"); if(vb2) vb2.style.display = "none";
+              }
+            }
           }
 
         let _timerLastKey = null;
@@ -1940,21 +1999,13 @@ if (IS_HOST) {
       }
 
       function showActionBar(secs) {
+        // Vider le timer précédent avant d'en démarrer un nouveau
+        clearInterval(G.ivals.action);
         document.getElementById("action-cbar").style.display = "block";
-        const fill = document.getElementById("action-fill"),
-          timeEl = document.getElementById("action-time");
-        fill.style.width = "100%";
-        fill.style.background = "#9999ff";
-        let rem = secs;
-        const tot = secs;
-        function upd() {
-          const m = Math.floor(rem / 60),
-            s = rem % 60;
-          timeEl.textContent = m + ":" + (s < 10 ? "0" : "") + s;
-          fill.style.width = Math.round((rem / tot) * 100) + "%";
-          if (rem <= 8) fill.style.background = "#be6d6d";
-        }
-        upd();
+        const fill = document.getElementById("action-fill");
+        const timeEl = document.getElementById("action-time");
+        if (fill) { fill.style.width = "100%"; fill.style.background = "#9999ff"; }
+        // Utiliser le timestamp Firebase (G._curStepStart) pour la synchronisation
         const actionStart = G._curStepStart || Date.now();
         G.ivals.action = startTimerFromTs(
           actionStart,
@@ -1964,20 +2015,34 @@ if (IS_HOST) {
           () => {
             document.getElementById("action-cbar").style.display = "none";
             if (!G.actDone) {
-              addChat("⏰ Temps écoulé — action ignorée.", true);
+              if (IS_HOST) addChat("⏰ Temps écoulé — action ignorée.", true);
               G.actDone = true;
             }
-            document.getElementById("wolf-attack-btn") && (document.getElementById("wolf-attack-btn").style.display = "none");
+            const ab = document.getElementById("wolf-attack-btn");
+            if (ab) ab.style.display = "none";
             advNight();
           }
         );
       }
 
       function advNight() {
-        if (!IS_HOST) return;
         clearInterval(G.ivals.action);
         document.getElementById("action-cbar").style.display = "none";
+        G.forceAction = false;
         if (window._hideNightTimer) window._hideNightTimer();
+        if (!IS_HOST) {
+          // Fermer le panneau d'action pour ce joueur
+          goTab("village", null);
+          G.actDone = true;
+          G.actTgt = null;
+          const ab = document.getElementById("wolf-attack-btn"); if(ab) ab.style.display = "none";
+          const vb2 = document.getElementById("wolf-vote-btn"); if(vb2) vb2.style.display = "none";
+          // Signaler au host que l'action est terminée
+          update(ref(db, "salons/" + SID + "/gameState"), {
+            nightStepDone: Date.now(),
+          });
+          return;
+        }
         G.forceAction = false;
         goTab("village", null); // fermer l'overlay action
         document.getElementById("wolf-vote-btn").style.display = "none";
