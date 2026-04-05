@@ -1630,15 +1630,7 @@ if (IS_HOST) {
               max-width:700px;margin:0.5rem 0">
               ${victimCards}
             </div>
-            <button id="bilan-continue-btn"
-              style="margin-top:0.8rem;padding:0.75rem 2.5rem;border-radius:30px;
-              background:rgba(26,18,0,0.85);border:1px solid var(--accent);color:var(--accent);
-              cursor:pointer;font-family:'Cinzel',serif;font-size:0.95rem;font-weight:600;
-              box-shadow:0 4px 16px rgba(0,0,0,0.5);
-              animation:transTextAppear 0.6s ease forwards 1.2s;opacity:0">
-              Continuer →
-            </button>
-          </div>`;
+            </div>`;
 
         function close() {
           if (!document.body.contains(overlay)) return;
@@ -1646,11 +1638,8 @@ if (IS_HOST) {
           setTimeout(() => { overlay.remove(); if (cb) cb(); }, 600);
         }
 
-        overlay.querySelector("#bilan-continue-btn").addEventListener("click", close);
-
-        // Fermeture automatique après 10s
-        const autoClose = setTimeout(close, 10000);
-        overlay.querySelector("#bilan-continue-btn").addEventListener("click", () => clearTimeout(autoClose));
+        // FIX : fermeture automatique après 3 secondes, sans bouton
+        setTimeout(close, 3000);
 
         document.body.appendChild(overlay);
       }
@@ -2558,7 +2547,7 @@ if (IS_HOST) {
         );
         const fill = document.getElementById("vote-fill");
         document.getElementById("vote-cbar").style.display = "block";
-        const VOTE_DURATION = 60;
+        const VOTE_DURATION = 15; // FIX : 15 secondes max pour voter
         const voteStart = Date.now();
         if (IS_HOST) {
           update(ref(db, "salons/" + SID + "/gameState"), {
@@ -2892,13 +2881,14 @@ if (IS_HOST) {
             Le village désigne <strong>${eliminated.name}</strong> !
           </div>`;
         document.body.appendChild(overlay);
+        // FIX : fermeture automatique après 3s (pas de bouton)
         setTimeout(() => {
           overlay.style.animation = "nightFadeOut 0.8s ease forwards";
           setTimeout(() => {
             overlay.remove();
             if (cb) cb();
           }, 800);
-        }, 4000);
+        }, 3000);
       }
 
       window.renderAction = function() {
