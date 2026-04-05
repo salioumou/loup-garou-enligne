@@ -6,213 +6,297 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="style.css" />
     <style>
-      /* ── NAVBAR ── */
       .navbar {
         position: fixed;
-        top: 0; left: 0; right: 0;
+        top: 0;
+        left: 0;
+        right: 0;
         z-index: 50;
         background: rgba(11, 14, 20, 0.97);
         border-bottom: 1px solid #1e2535;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 1.2rem;
-        height: 52px;
-        gap: 0.6rem;
+        padding: 0.6rem 2rem;
+        gap: 1rem;
       }
       .navbar-brand {
         font-family: "Cinzel", serif;
-        font-size: 0.95rem;
+        font-size: 1rem;
         color: var(--accent);
         white-space: nowrap;
-        text-shadow: 0 0 15px rgba(201,164,76,0.4);
-        flex-shrink: 0;
+        text-shadow: 0 0 15px rgba(201, 164, 76, 0.4);
       }
       .navbar-right {
         display: flex;
         align-items: center;
-        gap: 0.4rem;
-        flex-wrap: nowrap;
+        gap: 0.5rem;
+        flex-wrap: wrap;
       }
       .nav-btn {
         display: flex;
         align-items: center;
-        gap: 5px;
-        padding: 0.35rem 0.8rem;
+        gap: 6px;
+        padding: 0.4rem 0.9rem;
         border-radius: 8px;
         border: 1px solid #252d3a;
         background: #10131c;
         color: var(--highlight);
         cursor: pointer;
-        font-size: 0.78rem;
+        font-size: 0.8rem;
         font-family: inherit;
         transition: 0.2s;
         white-space: nowrap;
-        flex-shrink: 0;
       }
-      .nav-btn:hover { border-color: var(--accent); color: var(--accent); background: #1a1200; }
-      .nav-btn.danger:hover { border-color: #be6d6d; color: #be6d6d; background: #1a0808; }
-      .notif-wrap { position: relative; display: inline-flex; align-items: center; }
+      .nav-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: #1a1200;
+      }
+      .nav-btn.danger:hover {
+        border-color: #be6d6d;
+        color: #be6d6d;
+        background: #1a0808;
+      }
+      /* ── Badges de notification ── */
+      .notif-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
       .notif-dot {
-        position: absolute; top: -5px; right: -5px;
-        background: #be4444; color: #fff;
-        border-radius: 50%; width: 16px; height: 16px;
-        font-size: 0.6rem; font-weight: 700;
-        display: none; align-items: center; justify-content: center;
-        border: 2px solid #0b0e14; pointer-events: none; z-index: 10;
+        position: absolute;
+        top: -5px;
+        right: -5px;
+        background: #be4444;
+        color: #fff;
+        border-radius: 50%;
+        width: 18px;
+        height: 18px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #0b0e14;
+        pointer-events: none;
+        z-index: 10;
       }
-      .notif-dot.show { display: flex; }
+      .notif-dot.show {
+        display: flex;
+      }
       .nav-avatar {
-        width: 34px; height: 34px;
+        width: 42px;
+        height: 42px;
         border-radius: 50%;
         background: #1c2230;
         border: 2px solid var(--accent);
-        box-shadow: 0 0 8px rgba(201,164,76,0.3);
-        display: flex; align-items: center; justify-content: center;
-        font-size: 0.8rem; font-weight: 700; color: var(--accent);
-        overflow: hidden; flex-shrink: 0;
+        box-shadow: 0 0 10px rgba(201,164,76,0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: var(--accent);
+        overflow: hidden;
+        flex-shrink: 0;
       }
-
-      /* ── BODY ── */
-      body { padding-top: 52px; }
-
-      /* ── BACKGROUND FULL PAGE ── */
-      html, body {
-        min-height: 100%;
-        background-size: cover !important;
-        background-position: center top !important;
+      body {
+        padding-top: 56px;
       }
-
-      /* ── SALON CARDS ── */
       .salon-card-new {
-        background: #10131c; border: 1px solid #1e2535;
-        border-radius: 12px; padding: 0.9rem 1.1rem;
-        margin-bottom: 0.6rem; transition: 0.2s;
-        display: flex; align-items: center;
-        justify-content: space-between; gap: 10px; flex-wrap: wrap;
+        background: #10131c;
+        border: 1px solid #1e2535;
+        border-radius: 12px;
+        padding: 0.9rem 1.1rem;
+        margin-bottom: 0.6rem;
+        transition: 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
       }
-      .salon-card-new:hover { border-color: #2a3550; background: #12161f; }
-      .salon-info { flex: 1; min-width: 0; }
-      .salon-name { font-weight: 700; color: var(--highlight); font-size: 0.95rem; margin-bottom: 3px; }
-      .salon-meta { font-size: 0.72rem; color: #555; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-      .salon-meta .code { color: var(--accent); font-family: monospace; letter-spacing: 1px; }
-      .salon-joueurs { display: flex; align-items: center; gap: 4px; }
-      .joueur-dot { width: 8px; height: 8px; border-radius: 50%; background: #252d3a; }
-      .joueur-dot.filled { background: #6dbe6d; }
-      .salon-actions { display: flex; gap: 6px; flex-shrink: 0; }
+      .salon-card-new:hover {
+        border-color: #2a3550;
+        background: #12161f;
+      }
+      .salon-info {
+        flex: 1;
+        min-width: 0;
+      }
+      .salon-name {
+        font-weight: 700;
+        color: var(--highlight);
+        font-size: 0.95rem;
+        margin-bottom: 3px;
+      }
+      .salon-meta {
+        font-size: 0.72rem;
+        color: #555;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .salon-meta .code {
+        color: var(--accent);
+        font-family: monospace;
+        letter-spacing: 1px;
+      }
+      .salon-joueurs {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .joueur-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #252d3a;
+      }
+      .joueur-dot.filled {
+        background: #6dbe6d;
+      }
+      .salon-actions {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+      }
       .btn-rejoindre {
-        padding: 0.45rem 1.1rem; border-radius: 8px;
+        padding: 0.45rem 1.1rem;
+        border-radius: 8px;
         background: linear-gradient(135deg, #1a3a1a, #0e2a0e);
-        border: 1px solid #3a6a3a; color: #6dbe6d;
-        cursor: pointer; font-size: 0.82rem; font-family: inherit;
-        transition: 0.2s; font-weight: 600;
+        border: 1px solid #3a6a3a;
+        color: #6dbe6d;
+        cursor: pointer;
+        font-size: 0.82rem;
+        font-family: inherit;
+        transition: 0.2s;
+        font-weight: 600;
       }
-      .btn-rejoindre:hover { background: linear-gradient(135deg, #2a4a2a, #1a3a1a); box-shadow: 0 0 12px rgba(109,190,109,0.2); }
+      .btn-rejoindre:hover {
+        background: linear-gradient(135deg, #2a4a2a, #1a3a1a);
+        box-shadow: 0 0 12px rgba(109, 190, 109, 0.2);
+      }
       .btn-delete {
-        padding: 0.45rem 0.7rem; border-radius: 8px;
-        background: #1a0808; border: 1px solid #3a1a1a;
-        color: #be6d6d; cursor: pointer; font-size: 0.82rem; transition: 0.2s;
+        padding: 0.45rem 0.7rem;
+        border-radius: 8px;
+        background: #1a0808;
+        border: 1px solid #3a1a1a;
+        color: #be6d6d;
+        cursor: pointer;
+        font-size: 0.82rem;
+        transition: 0.2s;
       }
-      .btn-delete:hover { border-color: #be6d6d; }
-
-      /* ── ACTION CARDS ── */
-      .action-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 0.8rem; }
-      .action-card { background: #10131c; border: 1px solid #1e2535; border-radius: 12px; padding: 1rem; }
-      .action-card h3 { font-size: 0.88rem; margin-bottom: 0.6rem; color: var(--highlight); }
-      .action-card input { margin-bottom: 0.5rem; }
-
-      /* ── ROLE CARDS ── */
+      .btn-delete:hover {
+        border-color: #be6d6d;
+      }
+      .action-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.8rem;
+        margin-top: 0.8rem;
+      }
+      @media (max-width: 500px) {
+        .action-cards {
+          grid-template-columns: 1fr;
+        }
+      }
+      .action-card {
+        background: #10131c;
+        border: 1px solid #1e2535;
+        border-radius: 12px;
+        padding: 1rem;
+      }
+      .action-card h3 {
+        font-size: 0.88rem;
+        margin-bottom: 0.6rem;
+        color: var(--highlight);
+      }
+      .action-card input {
+        margin-bottom: 0.5rem;
+      }
       .role-card-img {
-        position: relative; border-radius: 12px; overflow: hidden;
-        cursor: pointer; transition: transform 0.3s, box-shadow 0.3s;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: transform 0.3s, box-shadow 0.3s;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
       }
-      .role-card-img:hover { transform: translateY(-8px) scale(1.03); box-shadow: 0 12px 30px rgba(201,164,76,0.4); }
-      .role-card-img img { width: 100%; display: block; border-radius: 12px; }
+      .role-card-img:hover {
+        transform: translateY(-8px) scale(1.03);
+        box-shadow: 0 12px 30px rgba(201, 164, 76, 0.4);
+      }
+      .role-card-img img {
+        width: 100%;
+        display: block;
+        border-radius: 12px;
+      }
       .role-card-desc {
-        position: absolute; bottom: 0; left: 0; right: 0;
-        background: linear-gradient(transparent, rgba(0,0,0,0.92));
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(transparent, rgba(0, 0, 0, 0.92));
         padding: 1.5rem 0.8rem 0.8rem;
         border-radius: 0 0 12px 12px;
-        opacity: 0; transition: opacity 0.3s;
+        opacity: 0;
+        transition: opacity 0.3s;
       }
-      .role-card-img:hover .role-card-desc { opacity: 1; }
-      .role-card-desc p { font-size: 0.75rem; color: #ddd; line-height: 1.4; margin-top: 3px; }
+      .role-card-img:hover .role-card-desc {
+        opacity: 1;
+      }
+      .role-card-desc p {
+        font-size: 0.75rem;
+        color: #ddd;
+        line-height: 1.4;
+        margin-top: 3px;
+      }
 
-      /* ══════════════════════════════
-         MOBILE
-      ══════════════════════════════ */
+      /* ══ MOBILE ══ */
       @media (max-width: 768px) {
-
-        /* Background image pleine page sur mobile */
+        html { min-height: 100%; background: #0b0e14; }
         body {
           background-attachment: scroll !important;
           background-size: cover !important;
           background-position: center top !important;
           background-repeat: no-repeat !important;
+          min-height: 100vh;
         }
-        html {
-          background: #0b0e14;
+        /* Cards semi-transparentes pour voir l'image de fond */
+        .card, .action-card, .salon-card-new {
+          background: rgba(16, 19, 28, 0.85) !important;
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
         }
-
-        /* Navbar mobile compacte sur une seule ligne */
-        .navbar {
-          padding: 0 10px;
-          height: 48px;
-          gap: 6px;
-        }
-        .navbar-brand {
-          font-size: 0.72rem;
-          max-width: 100px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .navbar-right { gap: 4px; }
-
-        /* Cacher le texte "Connecté : xxx" */
+        /* Navbar compacte */
+        .navbar { padding: 0 10px; height: 48px; gap: 6px; }
+        .navbar-brand { font-size: 0.72rem; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
         .navbar-right > span:first-child { display: none !important; }
-
-        /* Boutons navbar : icône seulement sur mobile */
-        .nav-btn {
-          padding: 5px 7px;
-          font-size: 0.72rem;
-          border-radius: 7px;
-          gap: 3px;
-        }
-        /* Cacher les textes des boutons, garder juste l'emoji */
-        .nav-btn .btn-label { display: none; }
-
-        /* Avatar plus petit */
-        .nav-avatar { width: 30px; height: 30px; font-size: 0.7rem; }
-
-        /* Hero */
+        .nav-btn { padding: 5px 7px; font-size: 0.72rem; }
+        .nav-avatar { width: 30px !important; height: 30px !important; font-size: 0.7rem; }
+        .btn-label { display: none; }
+        body { padding-top: 48px; }
+        /* Hero avec image de fond */
         .hero {
-          background-image: linear-gradient(rgba(11,14,20,0.55), rgba(11,14,20,0.7)),
+          background-image: linear-gradient(rgba(11,14,20,0.5), rgba(11,14,20,0.65)),
             url("https://i.imgur.com/irRgz5r.png") !important;
           background-size: cover !important;
           background-position: center top !important;
           background-attachment: scroll !important;
-          min-height: 45vh;
+          min-height: 50vh;
           padding: 1.5rem 1rem;
         }
-        .hero h1 { font-size: 2rem !important; margin-bottom: 0.6rem; }
+        .hero h1 { font-size: 2rem !important; }
         .hero p { font-size: 0.9rem !important; line-height: 1.6; }
-
-        /* Padding général */
-        body { padding-top: 48px; }
-
-        /* Grille action cards */
-        .action-cards { grid-template-columns: 1fr; gap: 0.6rem; }
-
-        /* Contenu principal padding */
-        .main-content, [style*="max-width: 800px"] {
-          padding: 0.8rem !important;
-        }
+        /* Grille 1 colonne */
+        .action-cards { grid-template-columns: 1fr !important; }
       }
-
       @media (max-width: 400px) {
         .hero h1 { font-size: 1.7rem !important; }
-        .navbar-brand { display: none; }
+        .navbar-brand { max-width: 80px; }
       }
     </style>
   </head>
