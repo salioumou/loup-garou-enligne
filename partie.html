@@ -1058,6 +1058,8 @@ if (IS_HOST) {
                 // L'hôte appelle setPageBg("day") et showDayTransition dans startDay()
                 // Les non-hôtes reçoivent la phase via Firebase mais n'avaient pas ces appels
                 setPageBg("day");
+                // FIX musique : démarrer la musique de jour pour les non-hôtes
+                _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
                 if (prevPhase === "night" || prevPhase === "resolving") {
                   const ambDay = DAY_AMBIANCE[G.turn % DAY_AMBIANCE.length] || "";
                   showDayTransition(
@@ -1090,6 +1092,16 @@ if (IS_HOST) {
               if (gs.phase === "night") {
                 G.chatOn = false;
                 updateChat();
+                // FIX non-hôtes : déclencher runNight() quand l'hôte passe en nuit
+                // L'hôte appelle runNight() directement — les non-hôtes attendent Firebase
+                if (!IS_HOST && !G._nightRunning) {
+                  G._nightRunning = true;
+                  // Musique nuit pour les non-hôtes
+                  if (_soundsLoaded && !musicMuted) {
+                    _loadSoundsJs(function() { startNightMusic(); });
+                  }
+                  runNight();
+                }
               }
             }
           }
@@ -1551,6 +1563,14 @@ if (IS_HOST) {
       }
 
       function showDeathScreen(player, reason, cb) {
+        // FIX bruitage : son de mort pour tous les joueurs
+        _loadSoundsJs(function() {
+          if (!musicMuted && _soundsLoaded) {
+            if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
+            SOUNDS.death.currentTime = 0;
+            SOUNDS.death.play().catch(()=>{});
+          }
+        });
         const r = RDATA[player.role] || RDATA.villager;
         const overlay = document.createElement("div");
         overlay.style.cssText = `position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;text-align:center;padding:2rem;animation:nightFadeIn 0.5s ease forwards;`;
@@ -1844,8 +1864,22 @@ if (IS_HOST) {
         SOUNDS.cock.currentTime = 0;
         SOUNDS.cock.volume = 0.9;
         SOUNDS.cock.play().catch(()=>{});
+        currentMusic = "cock";
+        // FIX musique jour : onended non fiable sur iOS Safari → setTimeout
+        // Durée coq ≈ 4s, on enchaîne après 4.5s dans tous les cas
+        const cockDur = (SOUNDS.cock.duration && isFinite(SOUNDS.cock.duration) && SOUNDS.cock.duration > 1)
+          ? SOUNDS.cock.duration * 1000 + 300
+          : 4500;
+        setTimeout(() => {
+          if (musicMuted || currentMusic === "day") return;
+          SOUNDS.day.currentTime = 0;
+          SOUNDS.day.volume = 0.45;
+          SOUNDS.day.play().catch(()=>{});
+          currentMusic = "day";
+        }, cockDur);
+        // Garder aussi onended comme fallback
         SOUNDS.cock.onended = () => {
-          if (musicMuted) return;
+          if (musicMuted || currentMusic === "day") return;
           SOUNDS.day.currentTime = 0;
           SOUNDS.day.volume = 0.45;
           SOUNDS.day.play().catch(()=>{});
@@ -2012,6 +2046,7 @@ if (IS_HOST) {
         clearIvals();
         G.phase = "night";
         G.hasVoted = false;
+        G._nightRunning = false; // reset pour le prochain tour
         setPageBg("night");
         lockVoteBtn(false);
         G.actDone = false;
@@ -2715,19 +2750,19 @@ if (IS_HOST) {
       };
 
       window.castVote = function () {
-        if (!G.selVote || G.hasVoted) return;
+        if (!G.selVote) return;
         if (!G.alive[ME.id]) { showNotif("❌ Les morts ne votent pas !"); return; }
         if (G.selVote && !G.alive[G.selVote]) {
           showNotif("❌ Ce joueur est déjà mort !");
-          G.selVote = null; lockVoteBtn(true); return;
+          G.selVote = null; return;
         }
-        // FIX VOTE : on enregistre juste le vote dans Firebase.
-        // On N'appelle plus resolveVotes() ici — seul l'hôte le fait à la fin du timer.
-        G.hasVoted = true;
-        lockVoteBtn(true);
+        // FIX VOTE : enregistre le vote dans Firebase — modifiable jusqu'à la fin du timer
+        // Ne pas verrouiller : le joueur peut rechanger son vote
         const safeId = ME.id.replace(/\./g, "_");
         set(ref(db, "salons/" + SID + "/votes/" + safeId), G.selVote);
-        showNotif("✅ Vote enregistré ! En attente des autres joueurs…");
+        showNotif("✅ Vote enregistré — vous pouvez encore changer !");
+        // Juste un retour visuel, pas de verrou
+        G.hasVoted = true; // pour le compteur de votes donnés
       };
 
       function resolveVotes() {
