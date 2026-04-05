@@ -1042,9 +1042,12 @@ if (IS_HOST) {
                 updateChat();
                 G.voteStarted = false;
                 G.voteListening = false;
-                document.getElementById("night-panel").style.display = "none";
-                document.getElementById("wolf-private").style.display = "none";
-                document.getElementById("main-cbar").style.display = "block";
+                const _np2 = document.getElementById("night-panel");
+                if (_np2) _np2.style.display = "none";
+                const _wp2 = document.getElementById("wolf-private");
+                if (_wp2) _wp2.style.display = "none";
+                const _mc = document.getElementById("main-cbar");
+                if (_mc) _mc.style.display = "block";
                 document.getElementById("cbar-label").textContent =
                   "☀️ Discussion";
                 document.getElementById("cbar-fill").style.background =
@@ -1254,30 +1257,10 @@ if (IS_HOST) {
           if (gs.victimForWitch && G.myRole === "witch" && !G.victim) {
             G.victim = gs.victimForWitch;
           }
-          // Son reçu → jouer pour tous les joueurs (hôte ET non-hôtes)
+          // Son reçu via Firebase → jouer pour tous via _safePlay
           if (gs.soundEvent && gs.soundTs && gs.soundTs !== _lastSoundTs) {
             _lastSoundTs = gs.soundTs;
-            // FIX sons : plus de filtre _lastBroadcastTs qui bloquait les non-hôtes
-            _loadSoundsJs(function() {
-              _initSoundVolumes();
-              if (!musicMuted && SOUNDS[gs.soundEvent]) {
-                const _sk = gs.soundEvent;
-                const _snd = SOUNDS[_sk];
-                if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
-                ["night","day"].forEach(function(k){ if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08; });
-                _snd.currentTime = 0;
-                _snd.play().catch(function(e){
-                  if (AC && AC.state === "suspended") {
-                    AC.resume().then(function(){ _snd.currentTime = 0; _snd.play().catch(function(){}); });
-                  }
-                });
-                var _dur = (_snd.duration && isFinite(_snd.duration) ? _snd.duration : 6) * 1000;
-                setTimeout(function(){
-                  if (SOUNDS.night) SOUNDS.night.volume = 0.5;
-                  if (SOUNDS.day) SOUNDS.day.volume = 0.45;
-                }, Math.min(_dur + 500, 35000));
-              }
-            });
+            _safePlay(gs.soundEvent);
           }
         });
         let _timerLastKey = null;
@@ -1599,14 +1582,7 @@ if (IS_HOST) {
       }
 
       function showDeathScreen(player, reason, cb) {
-        // FIX bruitage : son de mort pour tous les joueurs
-        _loadSoundsJs(function() {
-          if (!musicMuted && _soundsLoaded) {
-            if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
-            SOUNDS.death.currentTime = 0;
-            SOUNDS.death.play().catch(()=>{});
-          }
-        });
+        soundDeath(); // via _safePlay
         const r = RDATA[player.role] || RDATA.villager;
         const overlay = document.createElement("div");
         overlay.style.cssText = `position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;text-align:center;padding:2rem;animation:nightFadeIn 0.5s ease forwards;`;
@@ -1630,7 +1606,7 @@ if (IS_HOST) {
 
       // ── Bilan de nuit : une seule page pour toutes les victimes ────────────
       const AUBE_IMG  = "https://i.postimg.cc/cH0hfnjn/villagealaube.jpg";
-      const NIGHT_IMG = "assets/meuteloupgarou.jpg";   // village la nuit / meute
+      const NIGHT_IMG = "https://i.postimg.cc/vTtbGVh3/meuteloupgarou.jpg"; // meute loups nuit
       const DAY_IMG   = AUBE_IMG;                       // alias pour showDayTransition
 
       function showNightBilan(dead, cb) {
@@ -1762,18 +1738,72 @@ if (IS_HOST) {
       // interagit pour la première fois, puis les volumes sont initialisés.
       function _initSoundVolumes() {
         if (!_soundsLoaded) return;
-        SOUNDS.night.volume = 0.5;
-        SOUNDS.day.volume = 0.45;
-        SOUNDS.death.volume = 0.8;
-        SOUNDS.victory.volume = 0.7;
-        SOUNDS.cock.volume = 0.9;
-        SOUNDS.wolf.volume = 0.85;
-        SOUNDS.witch.volume = 0.8;
-        SOUNDS.littlegirl.volume = 0.75;
-        ["chasseur","salvateur","voyante","voyantebavarde","corbeau","cupidon",
-         "flute","ancien","idiot","grognement","voleur","enfantsauvage",
-         "chienloup","boucemissaire"].forEach(function(k){
-          if (SOUNDS[k]) SOUNDS[k].volume = 0.82;
+        var vols = {
+          night:0.5, day:0.45, death:0.8, victory:0.7, cock:0.9,
+          wolf:0.85, witch:0.8, littlegirl:0.75,
+          chasseur:0.82, salvateur:0.82, voyante:0.82, voyantebavarde:0.82,
+          corbeau:0.82, cupidon:0.82, flute:0.82, ancien:0.82, idiot:0.82,
+          grognement:0.82, voleur:0.82, enfantsauvage:0.82, chienloup:0.82,
+          boucemissaire:0.82
+        };
+        Object.keys(vols).forEach(function(k){ if (SOUNDS[k]) SOUNDS[k].volume = vols[k]; });
+      }
+
+      // ── Fonction centrale audio ──────────────────────────────────────────
+      // Charge sounds.js si besoin, débloque AudioContext, joue le son, retry si suspendu
+      function _safePlay(key, opts) {
+        opts = opts || {};
+        _loadSoundsJs(function() {
+          _initSoundVolumes();
+          var s = SOUNDS[key];
+          if (!s) { console.warn("[AUDIO] son introuvable:", key); return; }
+          if (musicMuted && !opts.force) return;
+
+          // Baisser la musique de fond si c'est un effet
+          if (!opts.isBg) {
+            ["night","day"].forEach(function(k){
+              if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08;
+            });
+          }
+
+          // Débloquer AudioContext iOS Safari
+          function _doPlay() {
+            s.currentTime = 0;
+            var p = s.play();
+            if (p) p.catch(function(e) {
+              console.warn("[AUDIO] play failed:", key, e.name);
+              // NotAllowedError = pas encore de geste utilisateur → réessayer après interaction
+              if (e.name === "NotAllowedError") {
+                document.addEventListener("click", function _retry() {
+                  document.removeEventListener("click", _retry);
+                  s.currentTime = 0; s.play().catch(function(){});
+                }, { once: true });
+              }
+              // si AudioContext suspendu
+              if (AC && AC.state === "suspended") {
+                AC.resume().then(function(){ s.currentTime = 0; s.play().catch(function(){}); });
+              }
+            });
+          }
+
+          if (AC && AC.state === "suspended") {
+            AC.resume().then(_doPlay);
+          } else {
+            _doPlay();
+          }
+
+          // Restaurer les volumes après la durée du son
+          if (!opts.isBg) {
+            var dur = (s.duration && isFinite(s.duration) && s.duration > 0.2 ? s.duration : 6) * 1000;
+            setTimeout(function() {
+              if (SOUNDS.night) SOUNDS.night.volume = 0.5;
+              if (SOUNDS.day) SOUNDS.day.volume = 0.45;
+            }, Math.min(dur + 500, 35000));
+          }
+
+          if (opts.onEnd) {
+            s.onended = opts.onEnd;
+          }
         });
       }
       // Déclenche le chargement au premier clic utilisateur (contourne autoplay policy)
@@ -1823,63 +1853,22 @@ if (IS_HOST) {
       var _lastSoundTs = 0;
 
       function broadcastSound(key) {
-        if (!musicMuted && SOUNDS[key]) {
-          // FIX sons : débloquer AudioContext avant play
-          if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
-          const bgKeys = ["night","day"];
-          bgKeys.forEach(function(k){ if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08; });
-          SOUNDS[key].currentTime = 0;
-          SOUNDS[key].play().catch(function(e){
-            console.warn("[AUDIO] failed:", key, e);
-            if (AC && AC.state === "suspended") {
-              AC.resume().then(function(){ SOUNDS[key].currentTime = 0; SOUNDS[key].play().catch(function(){}); });
-            }
-          });
-          var dur = (SOUNDS[key].duration && isFinite(SOUNDS[key].duration) ? SOUNDS[key].duration : 6) * 1000;
-          setTimeout(function(){
-            SOUNDS.night.volume = 0.5;
-            SOUNDS.day.volume = 0.45;
-          }, Math.min(dur + 500, 35000));
-        }
+        // Jouer localement via _safePlay
+        _safePlay(key);
+        // Broadcaster à tous via Firebase
         var ts = Date.now();
         _lastBroadcastTs = ts;
-        update(ref(db, "salons/" + SID + "/gameState"), {
-          soundEvent: key, soundTs: ts
-        });
+        update(ref(db, "salons/" + SID + "/gameState"), { soundEvent: key, soundTs: ts });
       }
 
       function playSound(key) {
-        if (musicMuted) return;
-        if (!_soundsLoaded) {
-          // Sons pas encore chargés : charger puis rejouer
-          _loadSoundsJs(function() { _initSoundVolumes(); playSound(key); });
-          return;
-        }
-        const s = SOUNDS[key];
-        if (!s) { console.warn("[AUDIO] SOUND NOT FOUND:", key); return; }
-        // FIX sons : débloquer AudioContext avant play (requis iOS Safari)
-        if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
-        const bgKeys = ["night","day"];
-        bgKeys.forEach(k => { if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08; });
-        s.currentTime = 0;
-        s.play().catch((e) => {
-          console.warn("[AUDIO] failed:", key, e);
-          // Réessayer après déverrouillage
-          if (AC && AC.state === "suspended") {
-            AC.resume().then(() => { s.currentTime = 0; s.play().catch(()=>{}); });
-          }
-        });
-        const dur = (s.duration && isFinite(s.duration) ? s.duration : 6) * 1000;
-        setTimeout(() => {
-          SOUNDS.night.volume = 0.5;
-          SOUNDS.day.volume = 0.45;
-        }, Math.min(dur + 500, 35000));
+        _safePlay(key);
       }
 
       function stopAllMusic() {
-        // Arrête uniquement la musique de fond, pas les effets sonores
+        if (!_soundsLoaded) return;
         ["night","day","cock"].forEach(function(k){
-          if (SOUNDS[k]) { SOUNDS[k].pause(); SOUNDS[k].currentTime = 0; }
+          if (SOUNDS[k]) { try { SOUNDS[k].pause(); } catch(e){} SOUNDS[k].currentTime = 0; }
         });
         currentMusic = null;
       }
@@ -1887,72 +1876,44 @@ if (IS_HOST) {
       function startNightMusic() {
         if (musicMuted) return;
         stopAllMusic();
-        SOUNDS.night.currentTime = 0;
-        SOUNDS.night.volume = 0.5;
-        const p = SOUNDS.night.play();
-        if (p) p.then(()=>console.log("[AUDIO] night music playing OK")).catch((e) => { console.warn("[AUDIO] Night music failed:", e); });
         currentMusic = "night";
+        _safePlay("night", { isBg: true });
       }
 
       function startDayMusic() {
         if (musicMuted) return;
         stopAllMusic();
         currentMusic = "cock";
-        // Débloquer AudioContext avant tout
-        if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
-
-        function _playCockThenDay() {
-          if (musicMuted) return;
-          const cock = SOUNDS.cock;
-          cock.currentTime = 0;
-          cock.volume = 0.9;
-          const p = cock.play();
-          if (p) p.catch(()=>{});
-
-          // Enchaîner la musique de jour après le coq
-          function _startDay() {
+        // Jouer le coq via _safePlay, puis enchaîner la musique jour
+        _safePlay("cock", {
+          isBg: true,
+          onEnd: function() {
             if (musicMuted || currentMusic === "day") return;
-            SOUNDS.day.currentTime = 0;
-            SOUNDS.day.volume = 0.45;
-            const pd = SOUNDS.day.play();
-            if (pd) pd.catch(()=>{});
             currentMusic = "day";
+            _safePlay("day", { isBg: true });
           }
-          // onended + setTimeout 4.5s comme double filet
-          cock.onended = _startDay;
-          // Calculer la durée réelle APRÈS play() (peut changer une fois chargé)
-          const rawDur = cock.duration;
-          const cockMs = (rawDur && isFinite(rawDur) && rawDur > 0.5) ? rawDur * 1000 + 400 : 4500;
-          setTimeout(() => {
-            if (currentMusic !== "day") _startDay();
-          }, cockMs);
-        }
-
-        // Si sons pas encore chargés, charger d'abord
-        if (!_soundsLoaded) {
-          _loadSoundsJs(function() { _initSoundVolumes(); _playCockThenDay(); });
-        } else {
-          _playCockThenDay();
-        }
+        });
+        // Double filet : setTimeout 5s au cas où onended ne fire pas (iOS Safari)
+        setTimeout(function() {
+          if (musicMuted || currentMusic === "day") return;
+          currentMusic = "day";
+          _safePlay("day", { isBg: true });
+        }, 5000);
       }
 
       function soundDeath() {
-        if (musicMuted) return;
-        SOUNDS.death.currentTime = 0;
-        SOUNDS.death.play().catch(() => {});
+        _safePlay("death");
       }
 
       function soundVictoryVillage() {
         stopAllMusic();
-        SOUNDS.victory.currentTime = 0;
-        SOUNDS.victory.play().catch(() => {});
+        _safePlay("victory", { force: true, isBg: false });
       }
 
       function soundVictoryWolves() {
         stopAllMusic();
-        SOUNDS.victory.currentTime = 0;
-        SOUNDS.victory.volume = 0.5;
-        SOUNDS.victory.play().catch(() => {});
+        if (_soundsLoaded && SOUNDS.victory) SOUNDS.victory.volume = 0.5;
+        _safePlay("victory", { force: true, isBg: false });
       }
 
       let AC = null;
@@ -2095,7 +2056,17 @@ if (IS_HOST) {
         clearIvals();
         G.phase = "night";
         G.hasVoted = false;
-        G._nightRunning = false; // reset pour le prochain tour
+        G._nightRunning = false;
+        // FIX tours suivants : réinitialiser tous les états du vote
+        G.voteStarted = false;
+        G.voteListening = false;
+        G._lastVoteResultTs = null;
+        G._voteResultHandled = null;
+        G.selVote = null;
+        G.votes = {};
+        G.isRunoff = false;
+        G.runoffCandidates = null;
+        if (G.voteListener) { G.voteListener(); G.voteListener = null; }
         setPageBg("night");
         lockVoteBtn(false);
         G.actDone = false;
@@ -2321,19 +2292,17 @@ if (IS_HOST) {
 
       function advNight() {
         clearInterval(G.ivals.action);
-        document.getElementById("action-cbar").style.display = "none";
-        // FIX chrono : seul l'hôte cache le timer ici.
-        // Les non-hôtes ont leur timer géré par le onValue Firebase (nightStepStart).
-        // Si un non-hôte cache le timer ici, il ne revient plus pour les étapes suivantes.
+        // FIX : protéger tous les getElementById — certains peuvent être null
+        const _el = (id) => document.getElementById(id);
+        if (_el("action-cbar")) _el("action-cbar").style.display = "none";
         if (IS_HOST && window._hideNightTimer) window._hideNightTimer();
         G.forceAction = false;
         G.actDone = true;
         G.actTgt = null;
-        // Fermer les panneaux d'action
         goTab("village", null);
-        const ab = document.getElementById("wolf-attack-btn"); if(ab) ab.style.display = "none";
-        const vb = document.getElementById("wolf-vote-btn"); if(vb) vb.style.display = "none";
-        document.getElementById("wolf-private").style.display = "none";
+        const ab = _el("wolf-attack-btn"); if(ab) ab.style.display = "none";
+        const vb = _el("wolf-vote-btn"); if(vb) vb.style.display = "none";
+        const wp = _el("wolf-private"); if(wp) wp.style.display = "none";
         G.chatOn = false;
         updateChat();
         if (!IS_HOST) {
@@ -2354,8 +2323,10 @@ if (IS_HOST) {
             G.turn++;
             G.chatOn = true;
             updateChat();
-            document.getElementById("night-panel").style.display = "none";
-            document.getElementById("wolf-private").style.display = "none";
+            const _npEl = document.getElementById("night-panel");
+            if (_npEl) _npEl.style.display = "none";
+            const _wpEl = document.getElementById("wolf-private");
+            if (_wpEl) _wpEl.style.display = "none";
             let dead = [];
             const botVillagers = G.players.filter(
               (p) => p.isBot && G.alive[p.id] && p.role !== "wolf"
@@ -2589,6 +2560,15 @@ if (IS_HOST) {
               phaseStart: dayStart,
               phaseDuration: DAY_DURATION,
               phase: "day",
+              // FIX tours suivants : effacer voteOpen et voteResult pour ne pas
+              // re-déclencher le vote chez les non-hôtes au prochain jour
+              voteOpen: false,
+              voteResult: null,
+              runoffTs: null,
+              runoffCandidates: null,
+              nightStepStart: null,
+              nightStepLabel: null,
+              nightStepRole: null,
             });
           }
           fill.style.background = "var(--accent)";
