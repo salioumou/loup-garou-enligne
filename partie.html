@@ -1353,7 +1353,7 @@ if (IS_HOST) {
         if (IS_HOST) {
           // L'hôte écrit le timestamp de départ dans Firebase
           const tsStart = Date.now();
-          update(ref(db, "salons/" + SID + "/gameState"), { gameStartTs: tsStart });
+          update(ref(db, "salons/" + SID + "/gameState"), { gameStartTs: tsStart, status: "playing" });
           _startCountdown(tsStart);
         } else {
           // Les autres joueurs lisent le timestamp écrit par l'hôte
@@ -4480,13 +4480,51 @@ if (IS_HOST) {
           window.location.href = "connexion.html";
           return;
         }
-        init();
-        setTimeout(() => {
-        const r = RDATA[G.myRole] || RDATA.villager;
-        document.getElementById(
-          "info-role"
-        ).innerHTML = `<img src="${r.img}" style="width:40px;border-radius:6px;float:left;margin-right:10px"/> ${r.n} — ${r.d}`;
-        }, 100);
+
+        // ── Attendre que l'hôte ait signalé status:"playing" avant de lancer init ──
+        // Évite la redirection vers accueil quand les joueurs arrivent avant que
+        // Firebase soit prêt (race condition après suppression du bouton "Commencer")
+        let _initLaunched = false;
+        function _launchInit() {
+          if (_initLaunched) return;
+          _initLaunched = true;
+          init();
+          setTimeout(() => {
+            const r = RDATA[G.myRole] || RDATA.villager;
+            const infoEl = document.getElementById("info-role");
+            if (infoEl) infoEl.innerHTML = `<img src="${r.img}" style="width:40px;border-radius:6px;float:left;margin-right:10px"/> ${r.n} — ${r.d}`;
+          }, 500);
+        }
+
+        // Vérifier si la partie est déjà en cours (reconnexion)
+        get(ref(db, "salons/" + SID + "/gameState/status")).then(snap => {
+          if (snap.exists() && snap.val() === "playing") {
+            // Partie déjà lancée → init direct (reconnexion)
+            _launchInit();
+          } else {
+            // Attendre le signal "playing" écrit par l'hôte dans showReveal()
+            const _statusRef = ref(db, "salons/" + SID + "/gameState/status");
+            const _unsubStatus = onValue(_statusRef, (s) => {
+              if (!s.exists() || s.val() !== "playing") return;
+              _unsubStatus();
+              _launchInit();
+            });
+            // Si c'est l'hôte lui-même → lancer sans attendre (il écrira le signal)
+            get(ref(db, "salons/" + SID + "/host")).then(hSnap => {
+              if (hSnap.exists() && hSnap.val() === ME.id) {
+                _unsubStatus();
+                _launchInit();
+              }
+            }).catch(() => {});
+            // Timeout 90s de sécurité → retour accueil si rien ne démarre
+            setTimeout(() => {
+              if (!_initLaunched) {
+                _unsubStatus();
+                window.location.href = "accueil.html";
+              }
+            }, 90000);
+          }
+        }).catch(() => { _launchInit(); });
 
       // ══════════ PANNEAU HÔTE ══════════
       window.toggleHostPanel = function() {
