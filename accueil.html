@@ -327,6 +327,40 @@
         .hero h1 { font-size: 1.7rem !important; }
         .navbar-brand { max-width: 90px; }
       }
+
+      /* Empêcher l'espace blanc en bas sur mobile */
+      @media (max-width: 768px) {
+        footer {
+          background: transparent !important;
+          color: #444;
+          padding: 1rem 1rem 2rem;
+          font-size: 0.75rem;
+          text-align: center;
+        }
+        /* Supprimer les marges/paddings qui créent des espaces blancs */
+        div[style*="max-width: 1100px"],
+        div[style*="max-width: 800px"],
+        div[style*="max-width:1100px"] {
+          padding-bottom: 0 !important;
+          margin-bottom: 0 !important;
+        }
+        /* Section "Comment Jouer" et autres sections */
+        section {
+          background: transparent !important;
+        }
+        /* Dernier élément avant footer */
+        body > div:last-of-type {
+          margin-bottom: 0 !important;
+          padding-bottom: 0 !important;
+        }
+        html, body { overflow-x: hidden; }
+        /* Toutes les sections avec bg opaque → transparentes */
+        [style*="background: #0b0e14"],
+        [style*="background:#0b0e14"],
+        [style*="background: linear-gradient"] {
+          background: transparent !important;
+        }
+      }
     </style>
   </head>
   <body style="position: relative">
