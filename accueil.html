@@ -262,7 +262,9 @@
         body {
           background: transparent !important;
           min-height: 100vh;
+          min-height: 100dvh;
           padding-top: 44px;
+          padding-bottom: env(safe-area-inset-bottom, 0px);
         }
 
         /* Navbar - une seule ligne compacte */
@@ -364,7 +366,7 @@
     </style>
   </head>
   <body style="position: relative">
-    <div style="position:fixed;inset:0;z-index:-1;background-image:linear-gradient(rgba(11,14,20,0.55),rgba(11,14,20,0.7)),url('https://i.imgur.com/irRgz5r.png');background-size:cover;background-position:center top;pointer-events:none;"></div>
+    <div style="position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;z-index:-1;background-image:linear-gradient(rgba(11,14,20,0.55),rgba(11,14,20,0.7)),url('https://i.imgur.com/irRgz5r.png');background-size:cover;background-position:center top;pointer-events:none;"></div>
     <div class="notif" id="notif"></div>
 
     <nav class="navbar">
