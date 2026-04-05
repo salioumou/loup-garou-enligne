@@ -254,13 +254,83 @@
         line-height: 1.4;
         margin-top: 3px;
       }
+
+      /* ══ MOBILE ══ */
+      @media (max-width: 768px) {
+
+        /* Body transparent - fond géré par la div fixe */
+        body {
+          background: transparent !important;
+          min-height: 100vh;
+          padding-top: 44px;
+        }
+
+        /* Navbar - une seule ligne compacte */
+        .navbar {
+          padding: 0 8px;
+          height: 44px;
+          flex-wrap: nowrap !important;
+          gap: 4px;
+        }
+        .navbar-brand {
+          font-size: 0.7rem;
+          max-width: 130px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          flex-shrink: 1;
+        }
+        .navbar-right {
+          flex-wrap: nowrap !important;
+          gap: 3px;
+          flex-shrink: 0;
+        }
+        /* Cacher "Connecté : xxx" */
+        .navbar-right > span:first-child { display: none !important; }
+        /* Boutons icône seulement */
+        .nav-btn {
+          padding: 5px 9px;
+          font-size: 1rem;
+          gap: 0;
+          flex-shrink: 0;
+          white-space: nowrap;
+        }
+        .btn-label { display: none !important; }
+        .nav-avatar {
+          width: 30px !important;
+          height: 30px !important;
+          font-size: 0.7rem;
+          border-width: 1px !important;
+        }
+
+        /* Hero */
+        .hero {
+          background: transparent !important;
+          min-height: 45vh;
+          padding: 1.5rem 1rem;
+        }
+        .hero h1 { font-size: 2rem !important; }
+        .hero p { font-size: 0.9rem !important; line-height: 1.6; }
+
+        /* Cards semi-transparentes */
+        .card, .action-card, .salon-card-new {
+          background: rgba(16, 19, 28, 0.88) !important;
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+        }
+
+        /* Grille action cards */
+        .action-cards { grid-template-columns: 1fr !important; gap: 0.6rem; }
+      }
+
+      @media (max-width: 390px) {
+        .hero h1 { font-size: 1.7rem !important; }
+        .navbar-brand { max-width: 90px; }
+      }
     </style>
   </head>
   <body style="position: relative">
-    <!-- Fond pleine page fixe -->
-    <div style="position:fixed;inset:0;z-index:-1;
-      background-image:linear-gradient(rgba(11,14,20,0.55),rgba(11,14,20,0.7)),url('https://i.imgur.com/irRgz5r.png');
-      background-size:cover;background-position:center top;pointer-events:none;"></div>
+    <div style="position:fixed;inset:0;z-index:-1;background-image:linear-gradient(rgba(11,14,20,0.55),rgba(11,14,20,0.7)),url('https://i.imgur.com/irRgz5r.png');background-size:cover;background-position:center top;pointer-events:none;"></div>
     <div class="notif" id="notif"></div>
 
     <nav class="navbar">
@@ -272,18 +342,18 @@
         ></span>
         <div class="notif-wrap">
           <button class="nav-btn" onclick="window.location.href='amis.html'">
-            👥 Amis
+            👥 <span class="btn-label">Amis</span>
           </button>
           <span class="notif-dot" id="badge-amis">0</span>
         </div>
         <button class="nav-btn" onclick="window.location.href='objectifs.html'">
-          🎯 Objectifs
+          🎯 <span class="btn-label">Objectifs</span>
         </button>
         <button class="nav-btn" onclick="window.location.href='profil.html'">
           <div class="nav-avatar" id="top-avatar"></div>
-          <span id="top-avatar-name"></span>
+          <span id="top-avatar-name" class="btn-label"></span>
         </button>
-        <button class="nav-btn danger" onclick="doLogout()">⏻ Déco</button>
+        <button class="nav-btn danger" onclick="doLogout()">⏻ <span class="btn-label">Déco</span></button>
       </div>
     </nav>
 
