@@ -783,7 +783,6 @@
         IS_HOST = sal.host === ME.id;
         G.players = sal.players;
         G.allowBots = sal.config?.allowBots !== false;
-        G.voteDuration = sal.config?.voteDuration || 60;
         if (sal.config?.voteDuration) localStorage.setItem("lg_vote_duration", sal.config.voteDuration);
         G.dayDuration = sal.config?.dayDuration || 180;
         // Charger les photos de profil
@@ -810,35 +809,97 @@
           const hBtn = document.getElementById("host-panel-btn");
           if (hBtn) hBtn.style.display = "flex";
         }
-        showReveal();
-        setTimeout(
-          () =>
-            showGameNotif(
-              "🐺",
-              "La partie a commencé ! Regardez votre rôle secret.",
-              6000
-            ),
-          1500
-        );
+        // Ne pas rejouer la révélation si le joueur se reconnecte en cours de partie
+        const _gs0 = existingState.exists() ? existingState.val() : null;
+        const _isReconn = _gs0 && _gs0.phase && (_gs0.phase === "night" || _gs0.phase === "day" || _gs0.phase === "vote" || _gs0.turn > 1);
+        if (!_isReconn) {
+          showReveal();
+          setTimeout(() => showGameNotif("🐺", "La partie a commencé ! Regardez votre rôle secret.", 6000), 1500);
+        } else {
+          showGameNotif("🔄", "Reconnexion en cours…", 3000);
+        }
 
         const existingState = await get(
           ref(db, "salons/" + SID + "/gameState")
         );
         if (existingState.exists()) {
           const gs = existingState.val();
+          // Restaurer l'état complet
           if (gs.alive)
             Object.entries(gs.alive).forEach(([id, alive]) => {
               if (G.alive[id] !== undefined) G.alive[id] = alive;
+              const dotId = id.replace(/_/g, ".");
+              if (dotId !== id && G.alive[dotId] !== undefined) G.alive[dotId] = alive;
             });
           if (gs.phase) G.phase = gs.phase;
           if (gs.turn) G.turn = gs.turn;
+          if (gs.potions) G.potions = gs.potions;
+          if (gs.lovers) G.lovers = gs.lovers || [];
+          if (gs.fluteTargets) G.fluteTargets = gs.fluteTargets || [];
+          if (gs.corbeauBonus) G.corbeauBonus = gs.corbeauBonus || {};
           if (gs.winner) {
             endGame(gs.winner, gs.winDesc || "");
             return;
           }
+          // Joueur mort → mode spectateur
+          if (G.alive[ME.id] === false) {
+            G.spectator = true;
+          }
           renderPanels();
           renderInfoPlayers();
           updateUI();
+          // Reconnexion en cours de partie → restaurer l'UI selon la phase
+          const isReconnect = gs.phase && (gs.phase === "night" || gs.phase === "day" || gs.phase === "vote");
+          if (isReconnect) {
+            setPageBg(gs.phase === "night" ? "night" : "day");
+            if (gs.phase === "night") {
+              // Nuit : cacher le chat, montrer panneau nuit
+              G.chatOn = false;
+              updateChat();
+              document.getElementById("night-panel").style.display = "block";
+              if (G.spectator) document.getElementById("night-panel").style.display = "none";
+            } else if (gs.phase === "day") {
+              // Jour : activer le chat, timer depuis Firebase
+              G.chatOn = true;
+              updateChat();
+              document.getElementById("night-panel").style.display = "none";
+              document.getElementById("main-cbar").style.display = "block";
+              document.getElementById("cbar-label").textContent = "☀️ Discussion";
+              if (gs.phaseStart && gs.phaseDuration) {
+                clearInterval(G.ivals.main);
+                G.ivals.main = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "cbar-fill", "cbar-time",
+                  () => { document.getElementById("main-cbar").style.display = "none"; if (!G.voteStarted) startVote(); }
+                );
+              }
+            } else if (gs.phase === "vote" || gs.voteOpen) {
+              // Vote en cours
+              G.chatOn = true;
+              updateChat();
+              document.getElementById("night-panel").style.display = "none";
+              if (!G.voteStarted) startVote();
+            }
+            // Host reconnecte en pleine nuit → reprendre la séquence
+            if (IS_HOST && gs.phase === "night" && gs.nightStepRole) {
+              // Reconstruire la séquence active et reprendre là où on était
+              G.seqIdx = 0;
+              G.activeSeq = (typeof NIGHT_SEQ !== "undefined") ? NIGHT_SEQ.filter((s) => {
+                if (s.first && G.turn > 1) return false;
+                if (!G.players.some((p) => p.role === s.r && G.alive[p.id])) return false;
+                if (s.r === "whitewolf" && G.turn % 2 !== 0) return false;
+                if (s.r === "witch") {
+                  const hasPotion = (G.potions?.save !== false) || (G.potions?.kill !== false);
+                  if (!hasPotion) return false;
+                }
+                const player = G.players.find(p => p.role === s.r);
+                if (player?.powerLost) return false;
+                return true;
+              }) : [];
+              // Trouver l'index de l'étape en cours
+              const curIdx = G.activeSeq.findIndex(s => s.r === gs.nightStepRole);
+              if (curIdx !== -1) G.seqIdx = curIdx;
+              addChat("🔄 <em>L'hôte s'est reconnecté — reprise de la partie.</em>", true);
+            }
+          }
         }
 
         // ✅ init() terminé : les données Firebase sont chargées
@@ -889,18 +950,7 @@ if (IS_HOST) {
           // Voyante Bavarde a joué → avancer l'étape pour tous
           if (gs.nightStepDone && gs.nightStepDone !== G._lastNightStepDone && G.phase === "night") {
             G._lastNightStepDone = gs.nightStepDone;
-            if (IS_HOST) {
-              // Un joueur a terminé son action → host avance à l'étape suivante
-              setTimeout(() => {
-                G.seqIdx++;
-                G.actTgt = null;
-                G.actDone = true;
-                G.chatOn = false;
-                const wp = document.getElementById("wolf-private"); if(wp) wp.style.display = "none";
-                updateChat();
-                setTimeout(nextNightStep, 600);
-              }, 800);
-            }
+            if (!IS_HOST) setTimeout(() => advNight(), 1200);
           }
           // Exclusion par l'hôte : rediriger le joueur exclu
           if (gs.kickedPlayer && gs.kickedPlayer === ME.id) {
@@ -949,24 +999,29 @@ if (IS_HOST) {
                 updateChat();
                 G.voteStarted = false;
                 G.voteListening = false;
-                setPageBg("day");
                 document.getElementById("night-panel").style.display = "none";
                 document.getElementById("wolf-private").style.display = "none";
                 document.getElementById("main-cbar").style.display = "block";
-                document.getElementById("cbar-label").textContent = "☀️ Discussion";
-                document.getElementById("cbar-fill").style.background = "var(--accent)";
+                document.getElementById("cbar-label").textContent =
+                  "☀️ Discussion";
+                document.getElementById("cbar-fill").style.background =
+                  "var(--accent)";
+                // Non-host: message géré par le host via addChat dans startDay()
                 const abDay = document.getElementById("wolf-attack-btn"); if(abDay) abDay.style.display = "none";
                 const vbDay2 = document.getElementById("wolf-vote-btn"); if(vbDay2) vbDay2.style.display = "none";
+                const bannDay = document.getElementById("wolf-vote-btn"); if(bannDay) bannDay.style.display = "none";
                 setPhaseInfo("☀️ Phase de discussion");
-                renderVoteList();
-                renderInfoPlayers();
                 goTab("village", document.getElementById("tbtn-village"));
-                if (gs.phaseStart && gs.phaseDuration) {
-                  clearInterval(G.ivals.main);
-                  G.ivals.main = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "cbar-fill", "cbar-time",
-                    () => { document.getElementById("main-cbar").style.display = "none"; if (!G.voteStarted) startVote(); }
-                  );
-                }
+                G.ivals.main = startTimerFromTs(
+                  gs.phaseStart,
+                  gs.phaseDuration,
+                  "cbar-fill",
+                  "cbar-time",
+                  () => {
+                    document.getElementById("main-cbar").style.display = "none";
+                    startVote();
+                  }
+                );
               }
 
               if (gs.phase === "vote") {
@@ -1011,25 +1066,30 @@ if (IS_HOST) {
 
           if (gs.voteOpen && !G.voteListening && !IS_HOST) {
             G.voteListening = true;
+            // Non-host: démarrer le vote avec le timer synchronisé depuis Firebase
             if (!G.voteStarted) {
               G.voteStarted = true;
               G.hasVoted = false;
               lockVoteBtn(false);
               showVoteBadge();
+              if (IS_HOST) addChat("🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?", true);
               renderVoteList();
               goTab("vote", document.getElementById("tbtn-vote"));
               document.getElementById("vote-cbar").style.display = "block";
               document.getElementById("vote-desc").textContent = "Choisissez le joueur à éliminer :";
               set(ref(db, "salons/" + SID + "/votes"), {});
-              G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"), (snap) => {
-                G.votes = snap.exists() ? snap.val() : {};
-                renderVoteList();
-                renderVoteSummary();
-              });
+              // Timer synchronisé depuis Firebase
               if (gs.phaseStart && gs.phaseDuration) {
                 const fill = document.getElementById("vote-fill");
+                const timeEl = document.getElementById("vote-time");
                 if (fill) fill.style.background = "#be6d6d";
-                G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {});
+                G.ivals.vote = startTimerFromTs(
+                  gs.phaseStart,
+                  gs.phaseDuration,
+                  "vote-fill",
+                  "vote-time",
+                  () => {}
+                );
               }
             }
           }
@@ -1057,70 +1117,42 @@ if (IS_HOST) {
             }
           }
         });
-
-          // ── Timer de nuit (tous les joueurs) ──
-          if (gs.nightStepStart && gs.nightStepDuration && gs.nightStepLabel) {
-            const _key = gs.nightStepStart + "|" + gs.nightStepLabel;
-            if (_key !== _timerLastKey) {
-              _timerLastKey = _key;
-              const _seq = (typeof NIGHT_SEQ !== "undefined") ? NIGHT_SEQ.find(s => s.l === gs.nightStepLabel) : null;
-              if (window._showNightTimer) window._showNightTimer(gs.nightStepLabel, gs.nightStepStart, gs.nightStepDuration, _seq ? _seq.img : null);
-            }
-          } else if (gs.phase !== "night" && _timerLastKey !== "hidden") {
-            _timerLastKey = "hidden";
-            if (window._hideNightTimer) window._hideNightTimer();
-          }
-
-          // ── Action du joueur non-host : afficher le panneau si c'est son tour ──
-          if (!IS_HOST && gs.phase === "night" && gs.nightStepRole && gs.nightStepStart) {
-            const _stepKey = gs.nightStepStart + "|" + gs.nightStepRole;
-            if (_stepKey !== G._lastShownStep) {
-              G._lastShownStep = _stepKey;
-              // Synchroniser le timestamp de début depuis Firebase
-              G._curStepStart = gs.nightStepStart;
-              const isMyTurn = (
-                G.myRole === gs.nightStepRole ||
-                // Loups : wolf, whitewolf, grandmechant voient tous le panneau loups
-                (gs.nightStepRole === "wolf" && ["wolf","whitewolf","grandmechant"].includes(G.myRole))
-              );
-              const isAlive = G.alive[ME.id] !== false;
-              if (isMyTurn && isAlive) {
-                const _cur = (typeof NIGHT_SEQ !== "undefined") ? NIGHT_SEQ.find(s => s.r === gs.nightStepRole) : null;
-                // Son spécifique selon le rôle
-                if (G.myRole === "witch") playSound("witch");
-                else if (G.myRole === "littlegirl") playSound("littlegirl");
-                else soundYourTurn();
-                showGameNotif("🔔", "C'est votre tour d'agir !", 3000);
-                if (G.myRole === "wolf" || G.myRole === "whitewolf" || G.myRole === "grandmechant") {
-                  G.chatOn = true;
-                  document.getElementById("wolf-private").style.display = "block";
-                  updateChat();
-                  G.forceAction = false;
-                  renderAction();
-                  if (_cur) showActionBar(_cur.s);
-                  const voteBtn = document.getElementById("wolf-vote-btn");
-                  if (voteBtn) voteBtn.style.display = "block";
-                  const attackBtn = document.getElementById("wolf-attack-btn");
-                  if (attackBtn) attackBtn.style.display = "flex";
-                } else {
-                  G.forceAction = true;
-                  goTab("action", document.getElementById("tbtn-action"));
-                  renderAction();
-                  if (_cur) showActionBar(_cur.s);
-                }
-              } else if (!isMyTurn) {
-                // Pas mon tour : cacher le chat loup et le panneau d'action
-                G.chatOn = false;
-                updateChat();
-                document.getElementById("wolf-private").style.display = "none";
-                const ab = document.getElementById("wolf-attack-btn"); if(ab) ab.style.display = "none";
-                const vb2 = document.getElementById("wolf-vote-btn"); if(vb2) vb2.style.display = "none";
-              }
-            }
-          }
-
         let _timerLastKey = null;
+        onValue(ref(db, "salons/" + SID + "/gameState"), (snap) => {
+          if (!snap.exists()) return;
+          const gs = snap.val();
 
+          if (!gs.phase || gs.phase !== "night" || gs.winner) {
+            if (_timerLastKey !== "hidden") {
+              _timerLastKey = "hidden";
+              if (window._hideNightTimer) window._hideNightTimer();
+            }
+            return;
+          }
+
+          if (gs.nightStepStart && gs.nightStepDuration && gs.nightStepLabel) {
+            const key = gs.nightStepStart + "|" + gs.nightStepLabel;
+            if (key === _timerLastKey) return; // déjà affiché
+            _timerLastKey = key;
+            const seq = (typeof NIGHT_SEQ !== "undefined")
+              ? NIGHT_SEQ.find(s => s.l === gs.nightStepLabel)
+              : null;
+            const img = seq ? seq.img : null;
+            if (window._showNightTimer) {
+              window._showNightTimer(
+                gs.nightStepLabel,
+                gs.nightStepStart,
+                gs.nightStepDuration,
+                img
+              );
+            }
+          } else {
+            if (_timerLastKey !== "waiting") {
+              _timerLastKey = "waiting";
+              if (window._hideNightTimer) window._hideNightTimer();
+            }
+          }
+        });
 
         onValue(ref(db, "gameTyping/" + SID), (snap) => {
           const el = document.getElementById("game-typing");
@@ -1886,7 +1918,6 @@ if (IS_HOST) {
       }
 
       function nextNightStep() {
-        if (!IS_HOST) return;
         if (G.seqIdx >= G.activeSeq.length) {
           resolveNight();
           return;
@@ -1999,13 +2030,21 @@ if (IS_HOST) {
       }
 
       function showActionBar(secs) {
-        // Vider le timer précédent avant d'en démarrer un nouveau
-        clearInterval(G.ivals.action);
         document.getElementById("action-cbar").style.display = "block";
-        const fill = document.getElementById("action-fill");
-        const timeEl = document.getElementById("action-time");
-        if (fill) { fill.style.width = "100%"; fill.style.background = "#9999ff"; }
-        // Utiliser le timestamp Firebase (G._curStepStart) pour la synchronisation
+        const fill = document.getElementById("action-fill"),
+          timeEl = document.getElementById("action-time");
+        fill.style.width = "100%";
+        fill.style.background = "#9999ff";
+        let rem = secs;
+        const tot = secs;
+        function upd() {
+          const m = Math.floor(rem / 60),
+            s = rem % 60;
+          timeEl.textContent = m + ":" + (s < 10 ? "0" : "") + s;
+          fill.style.width = Math.round((rem / tot) * 100) + "%";
+          if (rem <= 8) fill.style.background = "#be6d6d";
+        }
+        upd();
         const actionStart = G._curStepStart || Date.now();
         G.ivals.action = startTimerFromTs(
           actionStart,
@@ -2015,11 +2054,10 @@ if (IS_HOST) {
           () => {
             document.getElementById("action-cbar").style.display = "none";
             if (!G.actDone) {
-              if (IS_HOST) addChat("⏰ Temps écoulé — action ignorée.", true);
+              addChat("⏰ Temps écoulé — action ignorée.", true);
               G.actDone = true;
             }
-            const ab = document.getElementById("wolf-attack-btn");
-            if (ab) ab.style.display = "none";
+            document.getElementById("wolf-attack-btn") && (document.getElementById("wolf-attack-btn").style.display = "none");
             advNight();
           }
         );
@@ -2028,21 +2066,7 @@ if (IS_HOST) {
       function advNight() {
         clearInterval(G.ivals.action);
         document.getElementById("action-cbar").style.display = "none";
-        G.forceAction = false;
         if (window._hideNightTimer) window._hideNightTimer();
-        if (!IS_HOST) {
-          // Fermer le panneau d'action pour ce joueur
-          goTab("village", null);
-          G.actDone = true;
-          G.actTgt = null;
-          const ab = document.getElementById("wolf-attack-btn"); if(ab) ab.style.display = "none";
-          const vb2 = document.getElementById("wolf-vote-btn"); if(vb2) vb2.style.display = "none";
-          // Signaler au host que l'action est terminée
-          update(ref(db, "salons/" + SID + "/gameState"), {
-            nightStepDone: Date.now(),
-          });
-          return;
-        }
         G.forceAction = false;
         goTab("village", null); // fermer l'overlay action
         document.getElementById("wolf-vote-btn").style.display = "none";
@@ -2058,7 +2082,7 @@ if (IS_HOST) {
 
       function resolveNight() {
         if (window._hideNightTimer) window._hideNightTimer();
-        if (!IS_HOST) return;
+        // Traiter la nuit directement
         (function() {
             G.turn++;
             G.chatOn = true;
@@ -2317,7 +2341,7 @@ if (IS_HOST) {
         lockVoteBtn(false);
         if (IS_HOST) {
           const voteStart = Date.now();
-          const voteDur = G.voteDuration || 60;
+          const voteDur = parseInt(localStorage.getItem("lg_vote_duration") || 60);
           update(ref(db, "salons/" + SID + "/gameState"), {
             phase: "day",
             voteOpen: true,
@@ -2532,7 +2556,6 @@ if (IS_HOST) {
       };
 
       function resolveVotes() {
-        if (!IS_HOST) return;
         const votes = G.votes || {};
         const tally = {};
         Object.values(votes).forEach((targetId) => {
@@ -3131,6 +3154,7 @@ if (IS_HOST) {
         } else if (type === "wsave") {
           G.savedWitch = true;
           G.potions.save = false;
+          if (IS_HOST) update(ref(db, "salons/" + SID + "/gameState"), { potions: G.potions });
           playSound("witch");
           addChat("💚 Vous sauvez la victime des loups !", true);
           addJournal("Sorcière : potion vie utilisée");
@@ -3141,6 +3165,7 @@ if (IS_HOST) {
           }
           G.witchKill = t.id;
           G.potions.kill = false;
+          if (IS_HOST) update(ref(db, "salons/" + SID + "/gameState"), { potions: G.potions });
           playSound("witch");
           addChat(
             "☠️ Vous utilisez la potion de mort sur <strong>" +
@@ -3404,11 +3429,6 @@ if (IS_HOST) {
         G.spectator = true;
         updateChat();
         // Cacher le panneau de nuit pour que le mort voie le déroulement
-        const _np = document.getElementById("night-panel");
-        if (_np) _np.style.display = "none";
-        const _wp = document.getElementById("wolf-private");
-        if (_wp) _wp.style.display = "none";
-        // Cacher le panneau de nuit pour que le mort voie le déroulement
         const nightPanel = document.getElementById("night-panel");
         if (nightPanel) nightPanel.style.display = "none";
         const wolfPrivate = document.getElementById("wolf-private");
@@ -3618,21 +3638,7 @@ if (IS_HOST) {
         if (isBot && !(G.players && G.players.some(p => p.isBot))) return;
         const isWolfRole = !sys && !isBot && G.phase === "night" &&
           (G.myRole === "wolf" || G.myRole === "whitewolf" || G.myRole === "grandmechant");
-        if (!sys && !isBot && G.alive[ME.id] === false) return;
-        // Messages privés (sorcière, voyante, loups) → local seulement
-        if (sys && !isBot) {
-          const PRIVATE = ["💚 Vous sauvez","☠️ Vous utilisez","🛡️ Vous protégez",
-            "👻","Vous attaquez","💘 <strong>"];
-          if (PRIVATE.some(p => msg.includes(p))) {
-            const d = document.createElement("div");
-            d.className = "msg sys"; d.innerHTML = msg;
-            const gc = document.getElementById("game-chat");
-            if (gc) { gc.appendChild(d); gc.scrollTop = gc.scrollHeight; }
-            return;
-          }
-          // Autres messages sys → seul le HOST envoie dans Firebase
-          if (!IS_HOST) return;
-        }
+        if (!sys && !isBot && !G.alive[ME.id]) return;
         const chatRef = ref(
           db,
           "salons/" +
