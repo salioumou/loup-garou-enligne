@@ -978,6 +978,8 @@
           return;
         }
         _initAccueil();
+        // Nettoyage auto des salons terminés ou abandonnés (> 2h)
+        _cleanOldSalons();
       });
 
       function _initAccueil() {
@@ -1293,27 +1295,14 @@
             return;
           }
 
-          // Déjà dans le salon
-          if (salon.players.find((p) => p.id === me.id)) {
-            localStorage.setItem("lg_current_salon", id);
-            localStorage.setItem("lg_is_host", "false");
-            window.location.href = "lobby.html";
-            return;
-          }
-          const humanPlayers = salon.players.filter(p => !p.isBot);
-          const bots = salon.players.filter(p => p.isBot);
-          if (humanPlayers.length >= salon.max) {
+          if (salon.players.length >= salon.max) {
             showNotif("Salon plein !");
             return;
           }
-          // Retirer un bot si salon plein pour faire place à l'humain
-          let newPlayers = [...salon.players];
-          if (newPlayers.length >= salon.max && bots.length > 0) {
-            const lastBotIdx = newPlayers.map(p => p.isBot).lastIndexOf(true);
-            if (lastBotIdx !== -1) newPlayers.splice(lastBotIdx, 1);
+          if (!salon.players.find((p) => p.id === me.id)) {
+            salon.players.push({ id: me.id, name: me.name, ready: true });
+            await set(ref(db, "salons/" + id), salon);
           }
-          newPlayers.push({ id: me.id, name: me.name, ready: true });
-          await update(ref(db, "salons/" + id), { players: newPlayers });
           localStorage.setItem("lg_current_salon", id);
           localStorage.setItem("lg_is_host", "false");
           localStorage.setItem("lg_is_spectator", "false");
