@@ -404,13 +404,13 @@
           border-radius: 8px;
           transition: none;
         }
-        /* Sur mobile : tap pour afficher la description */
-        .role-card-img .role-card-desc {
-          opacity: 0;
-          transition: opacity 0.2s;
-        }
+        /* Sur mobile : tap = même effet que hover desktop */
         .role-card-img.tapped .role-card-desc {
-          opacity: 1;
+          opacity: 1 !important;
+        }
+        /* Désactiver le transform hover sur mobile (trop instable au touch) */
+        .role-card-img:active {
+          transform: none;
         }
 
         /* Titres de section moins imposants */
@@ -1518,17 +1518,25 @@
       } // fin _initAccueil
 
       // ── Tap sur cartes de rôles (mobile) ─────────────────────────────────
-      document.querySelectorAll(".role-card-img").forEach(card => {
-        card.addEventListener("click", function(e) {
-          // Sur desktop le hover CSS suffit, sur mobile on toggle la classe
-          if (window.matchMedia("(max-width: 600px)").matches) {
+      function initRoleCardTap() {
+        document.querySelectorAll(".role-card-img").forEach(card => {
+          // Utiliser touchstart pour réactivité immédiate
+          card.addEventListener("touchstart", function(e) {
+            if (!window.matchMedia("(max-width: 768px)").matches) return;
+            e.preventDefault();
             const wasOpen = this.classList.contains("tapped");
-            // Fermer toutes les autres
             document.querySelectorAll(".role-card-img.tapped").forEach(c => c.classList.remove("tapped"));
             if (!wasOpen) this.classList.add("tapped");
+          }, { passive: false });
+        });
+        // Tap ailleurs = fermer toutes
+        document.addEventListener("touchstart", function(e) {
+          if (!e.target.closest(".role-card-img")) {
+            document.querySelectorAll(".role-card-img.tapped").forEach(c => c.classList.remove("tapped"));
           }
         });
-      });
+      }
+      initRoleCardTap();
     </script>
   </body>
 </html>
