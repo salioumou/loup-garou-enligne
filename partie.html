@@ -1197,32 +1197,56 @@ if (IS_HOST) {
             });
           }
 
+          // FIX : détecter runoff pour TOUS les joueurs
+          if (gs.runoffTs && gs.runoffTs !== G._lastRunoffTs) {
+            G._lastRunoffTs = gs.runoffTs;
+            G.isRunoff = true;
+            G.runoffCandidates = gs.runoffCandidates || [];
+            G.selVote = null;
+            G.hasVoted = false;
+            G.votes = {};
+            lockVoteBtn(false);
+            if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+            G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
+              (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
+            );
+            renderVoteList();
+            goTab("vote", document.getElementById("tbtn-vote"));
+            document.getElementById("vote-cbar").style.display = "block";
+            document.getElementById("vote-desc").textContent = "⚖️ Second tour — choisissez parmi les ex-æquo :";
+            if (gs.phaseStart && gs.phaseDuration) {
+              clearInterval(G.ivals.vote);
+              G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {
+                document.getElementById("vote-cbar").style.display = "none";
+                if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+                if (IS_HOST) resolveVotes();
+              });
+            }
+          }
+
           if (gs.voteOpen && !G.voteListening && !IS_HOST) {
             G.voteListening = true;
-            // Non-host: démarrer le vote avec le timer synchronisé depuis Firebase
             if (!G.voteStarted) {
               G.voteStarted = true;
               G.hasVoted = false;
               lockVoteBtn(false);
               showVoteBadge();
-              if (IS_HOST) addChat("🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?", true);
               renderVoteList();
               goTab("vote", document.getElementById("tbtn-vote"));
               document.getElementById("vote-cbar").style.display = "block";
               document.getElementById("vote-desc").textContent = "Choisissez le joueur à éliminer :";
-              set(ref(db, "salons/" + SID + "/votes"), {});
-              // Timer synchronisé depuis Firebase
+              if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+              G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
+                (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
+              );
               if (gs.phaseStart && gs.phaseDuration) {
                 const fill = document.getElementById("vote-fill");
-                const timeEl = document.getElementById("vote-time");
                 if (fill) fill.style.background = "#be6d6d";
-                G.ivals.vote = startTimerFromTs(
-                  gs.phaseStart,
-                  gs.phaseDuration,
-                  "vote-fill",
-                  "vote-time",
-                  () => {}
-                );
+                clearInterval(G.ivals.vote);
+                G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {
+                  document.getElementById("vote-cbar").style.display = "none";
+                  if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+                });
               }
             }
           }
@@ -1230,30 +1254,30 @@ if (IS_HOST) {
           if (gs.victimForWitch && G.myRole === "witch" && !G.victim) {
             G.victim = gs.victimForWitch;
           }
-          // Son reçu → jouer pour tous sauf l'émetteur
+          // Son reçu → jouer pour tous les joueurs (hôte ET non-hôtes)
           if (gs.soundEvent && gs.soundTs && gs.soundTs !== _lastSoundTs) {
             _lastSoundTs = gs.soundTs;
-            if (Math.abs(gs.soundTs - _lastBroadcastTs) > 300) {
-              // FIX sons : charger sounds.js si pas encore chargé, puis jouer
-              _loadSoundsJs(function() {
-                _initSoundVolumes();
-                if (!musicMuted && SOUNDS[gs.soundEvent]) {
-                  const _sk = gs.soundEvent;
-                  const _snd = SOUNDS[_sk];
-                  // Tenter de débloquer l'AudioContext (requis sur mobile Safari)
-                  if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
-                  // Baisse la musique de fond
-                  ["night","day"].forEach(function(k){ if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08; });
-                  _snd.currentTime = 0;
-                  _snd.play().catch(function(e){ console.warn("[AUDIO] son Firebase:", _sk, e); });
-                  var _dur = (_snd.duration && isFinite(_snd.duration) ? _snd.duration : 6) * 1000;
-                  setTimeout(function(){
-                    SOUNDS.night.volume = 0.5;
-                    SOUNDS.day.volume = 0.45;
-                  }, Math.min(_dur + 500, 35000));
-                }
-              });
-            }
+            // FIX sons : plus de filtre _lastBroadcastTs qui bloquait les non-hôtes
+            _loadSoundsJs(function() {
+              _initSoundVolumes();
+              if (!musicMuted && SOUNDS[gs.soundEvent]) {
+                const _sk = gs.soundEvent;
+                const _snd = SOUNDS[_sk];
+                if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
+                ["night","day"].forEach(function(k){ if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].volume = 0.08; });
+                _snd.currentTime = 0;
+                _snd.play().catch(function(e){
+                  if (AC && AC.state === "suspended") {
+                    AC.resume().then(function(){ _snd.currentTime = 0; _snd.play().catch(function(){}); });
+                  }
+                });
+                var _dur = (_snd.duration && isFinite(_snd.duration) ? _snd.duration : 6) * 1000;
+                setTimeout(function(){
+                  if (SOUNDS.night) SOUNDS.night.volume = 0.5;
+                  if (SOUNDS.day) SOUNDS.day.volume = 0.45;
+                }, Math.min(_dur + 500, 35000));
+              }
+            });
           }
         });
         let _timerLastKey = null;
@@ -1873,30 +1897,43 @@ if (IS_HOST) {
       function startDayMusic() {
         if (musicMuted) return;
         stopAllMusic();
-        SOUNDS.cock.currentTime = 0;
-        SOUNDS.cock.volume = 0.9;
-        SOUNDS.cock.play().catch(()=>{});
         currentMusic = "cock";
-        // FIX musique jour : onended non fiable sur iOS Safari → setTimeout
-        // Durée coq ≈ 4s, on enchaîne après 4.5s dans tous les cas
-        const cockDur = (SOUNDS.cock.duration && isFinite(SOUNDS.cock.duration) && SOUNDS.cock.duration > 1)
-          ? SOUNDS.cock.duration * 1000 + 300
-          : 4500;
-        setTimeout(() => {
-          if (musicMuted || currentMusic === "day") return;
-          SOUNDS.day.currentTime = 0;
-          SOUNDS.day.volume = 0.45;
-          SOUNDS.day.play().catch(()=>{});
-          currentMusic = "day";
-        }, cockDur);
-        // Garder aussi onended comme fallback
-        SOUNDS.cock.onended = () => {
-          if (musicMuted || currentMusic === "day") return;
-          SOUNDS.day.currentTime = 0;
-          SOUNDS.day.volume = 0.45;
-          SOUNDS.day.play().catch(()=>{});
-          currentMusic = "day";
-        };
+        // Débloquer AudioContext avant tout
+        if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
+
+        function _playCockThenDay() {
+          if (musicMuted) return;
+          const cock = SOUNDS.cock;
+          cock.currentTime = 0;
+          cock.volume = 0.9;
+          const p = cock.play();
+          if (p) p.catch(()=>{});
+
+          // Enchaîner la musique de jour après le coq
+          function _startDay() {
+            if (musicMuted || currentMusic === "day") return;
+            SOUNDS.day.currentTime = 0;
+            SOUNDS.day.volume = 0.45;
+            const pd = SOUNDS.day.play();
+            if (pd) pd.catch(()=>{});
+            currentMusic = "day";
+          }
+          // onended + setTimeout 4.5s comme double filet
+          cock.onended = _startDay;
+          // Calculer la durée réelle APRÈS play() (peut changer une fois chargé)
+          const rawDur = cock.duration;
+          const cockMs = (rawDur && isFinite(rawDur) && rawDur > 0.5) ? rawDur * 1000 + 400 : 4500;
+          setTimeout(() => {
+            if (currentMusic !== "day") _startDay();
+          }, cockMs);
+        }
+
+        // Si sons pas encore chargés, charger d'abord
+        if (!_soundsLoaded) {
+          _loadSoundsJs(function() { _initSoundVolumes(); _playCockThenDay(); });
+        } else {
+          _playCockThenDay();
+        }
       }
 
       function soundDeath() {
@@ -2628,6 +2665,11 @@ if (IS_HOST) {
             phase: "vote",
           });
         }
+        // FIX : rendre le chrono rouge et visible immédiatement
+        const voteFill = document.getElementById("vote-fill");
+        if (voteFill) { voteFill.style.background = "#be6d6d"; voteFill.style.width = "100%"; }
+        document.getElementById("vote-cbar").style.display = "block";
+
         G.ivals.vote = startTimerFromTs(
           voteStart,
           VOTE_DURATION,
@@ -2636,9 +2678,7 @@ if (IS_HOST) {
           () => {
             document.getElementById("vote-cbar").style.display = "none";
             if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-            // FIX VOTE : seul l'hôte résout les votes à la fin du timer
             if (IS_HOST) resolveVotes();
-            // Les non-hôtes attendent voteResult via Firebase (onValue ci-dessous)
           }
         );
       }
@@ -2720,16 +2760,19 @@ if (IS_HOST) {
 
       window.selVote = function (id, el) {
         if (!G.alive[ME.id]) return;
-        // Second tour : on ne peut voter que pour les ex-æquo
         if (G.isRunoff && G.runoffCandidates && !G.runoffCandidates.includes(id)) return;
         G.selVote = id;
+        G.hasVoted = true;
         const safeId = ME.id.replace(/\./g, "_");
         set(ref(db, "salons/" + SID + "/votes/" + safeId), id);
-        document
-          .querySelectorAll(".vote-item")
-          .forEach((v) => v.classList.remove("selected"));
+        document.querySelectorAll(".vote-item").forEach((v) => v.classList.remove("selected"));
         el.classList.add("selected");
         document.getElementById("vote-btn").disabled = false;
+        // FIX : fermer le panel vote après sélection + notif
+        const vName = G.players.find(p => p.id === id)?.name || "?";
+        showNotif("✅ Vote pour " + vName + " — vous pouvez changer avant la fin du timer");
+        // Revenir au chat village (le joueur peut réouvrir via le bouton vote)
+        setTimeout(() => goTab("village", null), 800);
       };
 
       // Verrouiller/déverrouiller le bouton Vote
@@ -2755,10 +2798,7 @@ if (IS_HOST) {
           showNotif("⏳ Ce n'est pas encore l'heure du vote !");
           return;
         }
-        if (G.hasVoted) {
-          showNotif("✅ Vous avez déjà voté !");
-          return;
-        }
+        // FIX : on peut rouvrir même après avoir voté pour changer son vote
         clearVoteBadge();
         goTab("vote", btn);
       };
@@ -2801,48 +2841,28 @@ if (IS_HOST) {
           (id) => tally[id] === maxVotes
         );
 
-        // ⚖️ ÉGALITÉ → second tour entre les ex-æquo (une seule fois)
+        // ⚖️ ÉGALITÉ → second tour — broadcaster via Firebase pour TOUS
         if (candidates.length > 1 && !G.isRunoff) {
-          G.isRunoff = true;
-          addChat(
-            "⚖️ <strong>Égalité !</strong> Un second vote a lieu entre : " +
-            candidates.map(id => {
-              const p = G.players.find(x => x.id === id);
-              return p ? `<strong>${p.name}</strong>` : "?";
-            }).join(", ") + ".",
-            true
-          );
-          set(ref(db, "salons/" + SID + "/votes"), null);
-          // Relancer un vote restreint aux candidats ex-æquo
-          G.runoffCandidates = candidates;
-          G.selVote = null;
-          G.hasVoted = false;
-          G.votes = {};
-          lockVoteBtn(false);
-          renderVoteList();
-          goTab("vote", document.getElementById("tbtn-vote"));
-          document.getElementById("vote-cbar").style.display = "block";
-          document.getElementById("vote-desc").textContent = "⚖️ Second tour — choisissez parmi les ex-æquo :";
-          set(ref(db, "salons/" + SID + "/votes"), {});
-          if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-          G.voteListener = onValue(
-            ref(db, "salons/" + SID + "/votes"),
-            (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
-          );
-          const RUNOFF_DURATION = 45;
+          const RUNOFF_DURATION = 15;
           const runoffStart = Date.now();
           if (IS_HOST) {
+            if (IS_HOST) addChat(
+              "⚖️ <strong>Égalité !</strong> Second tour entre : " +
+              candidates.map(id => {
+                const p = G.players.find(x => x.id === id);
+                return p ? `<strong>${p.name}</strong>` : "?";
+              }).join(", ") + ".", true
+            );
+            set(ref(db, "salons/" + SID + "/votes"), null);
             update(ref(db, "salons/" + SID + "/gameState"), {
-              phaseStart: runoffStart, phaseDuration: RUNOFF_DURATION, phase: "vote",
+              phaseStart: runoffStart,
+              phaseDuration: RUNOFF_DURATION,
+              phase: "vote",
+              voteOpen: true,
               runoffCandidates: candidates,
+              runoffTs: runoffStart,
             });
           }
-          G.ivals.vote = startTimerFromTs(runoffStart, RUNOFF_DURATION, "vote-fill", "vote-time", () => {
-            document.getElementById("vote-cbar").style.display = "none";
-            if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-            // FIX VOTE : seul l'hôte résout le 2ème tour
-            if (IS_HOST) resolveVotes();
-          });
           return;
         }
 
