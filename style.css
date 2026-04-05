@@ -29,6 +29,16 @@ body {
   min-height: 100vh;
 }
 
+/* Fix background-attachment:fixed non supporté sur mobile */
+@media (max-width: 768px) {
+  body {
+    background-attachment: scroll;
+  }
+  .login-page {
+    background-attachment: scroll;
+  }
+}
+
 .btn {
   display: inline-block;
   padding: 0.8rem 2.2rem;
@@ -484,10 +494,16 @@ footer {
   .hero h1 {
     font-size: 2.2rem;
   }
+  .hero p {
+    font-size: 1rem;
+  }
   .main-container {
     flex-direction: column;
   }
   .rules-container {
     max-height: none;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
