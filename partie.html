@@ -93,20 +93,18 @@
     <div id="wolf-list"></div>
     </div>
     </div>
-    <div style="display: flex; gap: 1rem; justify-content: center">
-    <button
-    class="btn secondary"
-    onclick="window.location.href='accueil.html'"
-    >
-    ← Retour
-    </button>
-    <button
-    class="btn"
-    style="padding: 1rem 2.5rem; font-size: 1.05rem"
-    onclick="startFirstNight()"
-    >
-    Commencer →
-    </button>
+    <div style="margin-top: 1.5rem; text-align: center">
+      <div style="font-size: 0.85rem; color: #888; font-style: italic; margin-bottom: 0.8rem">
+        La partie commence dans…
+      </div>
+      <div id="reveal-countdown" style="
+        width: 80px; height: 80px; border-radius: 50%;
+        border: 3px solid var(--accent);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 2.2rem; font-weight: 700;
+        color: var(--accent); font-family: 'Cinzel', serif;
+        margin: 0 auto;
+      ">–</div>
     </div>
     </div>
     </div>
@@ -1307,31 +1305,63 @@ if (IS_HOST) {
               wolf ? "#be6d6d" : "#c9a44c"
             };pointer-events:none;z-index:999;animation:p${i} 1.2s ease forwards;`;
             document.body.appendChild(p);
-            setTimeout(() => {
-              p.remove();
-              style.remove();
-            }, 1200);
+            setTimeout(() => { p.remove(); style.remove(); }, 1200);
           }
         }, 400);
         if (wolf) {
           const wolves = G.players.filter(
-            (p) => p.role === "wolf" && p.id !== ME.id
+            (p) => ["wolf","whitewolf","grandmechant"].includes(p.role) && p.id !== ME.id
           );
           if (wolves.length) {
             document.getElementById("wolf-teammates").style.display = "block";
             document.getElementById("wolf-list").innerHTML = wolves
-              .map(
-                (p) => `
+              .map((p) => `
               <div class="player-row">
-                <div style="display:flex;align-items:center;gap:8px">${getAvatarHtml(
-                  p,
-                  32
-                )}<span>${p.name}</span></div>
+                <div style="display:flex;align-items:center;gap:8px">${getAvatarHtml(p, 32)}<span>${p.name}</span></div>
                 <span class="badge red">Loup</span>
-              </div>`
-              )
-              .join("");
+              </div>`).join("");
           }
+        }
+
+        // ── Compte à rebours synchronisé via Firebase ─────────────────────
+        // L'hôte écrit gameStartTs une seule fois ; tous les joueurs le lisent
+        const REVEAL_DURATION = 15; // secondes pour lire son rôle
+        const cdEl = document.getElementById("reveal-countdown");
+
+        function _startCountdown(tsStart) {
+          let _cdInterval = setInterval(() => {
+            const rem = Math.max(0, REVEAL_DURATION - Math.floor((Date.now() - tsStart) / 1000));
+            if (cdEl) {
+              cdEl.textContent = rem;
+              cdEl.style.borderColor = rem <= 5 ? "#be6d6d" : "var(--accent)";
+              cdEl.style.color       = rem <= 5 ? "#be6d6d" : "var(--accent)";
+              cdEl.style.transform   = rem <= 5 ? "scale(1.1)" : "scale(1)";
+            }
+            if (rem <= 0) {
+              clearInterval(_cdInterval);
+              startFirstNight();
+            }
+          }, 500);
+          // Déclencher immédiatement si déjà expiré
+          const remNow = Math.max(0, REVEAL_DURATION - Math.floor((Date.now() - tsStart) / 1000));
+          if (cdEl) cdEl.textContent = remNow;
+          if (remNow <= 0) { clearInterval(_cdInterval); startFirstNight(); }
+        }
+
+        if (IS_HOST) {
+          // L'hôte écrit le timestamp de départ dans Firebase
+          const tsStart = Date.now();
+          update(ref(db, "salons/" + SID + "/gameState"), { gameStartTs: tsStart });
+          _startCountdown(tsStart);
+        } else {
+          // Les autres joueurs lisent le timestamp écrit par l'hôte
+          const _gsRef = ref(db, "salons/" + SID + "/gameState/gameStartTs");
+          const _unsubTs = onValue(_gsRef, (snap) => {
+            if (!snap.exists()) return;
+            const tsStart = snap.val();
+            _unsubTs(); // une seule lecture suffit
+            _startCountdown(tsStart);
+          });
         }
       }
 
@@ -1530,6 +1560,8 @@ if (IS_HOST) {
       }
 
       window.startFirstNight = function () {
+        if (G._firstNightStarted) return;
+        G._firstNightStarted = true;
         document.getElementById("sc-reveal").style.display = "none";
         document.getElementById("sc-game").style.display = "block";
         const r = RDATA[G.myRole] || RDATA.villager;
