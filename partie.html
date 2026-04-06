@@ -1095,6 +1095,14 @@ if (IS_HOST) {
               if (gs.phase === "night") {
                 G.chatOn = false;
                 updateChat();
+                // FIX : cacher tous les timers de jour quand la nuit commence
+                const _mcNight = document.getElementById("main-cbar");
+                if (_mcNight) _mcNight.style.display = "none";
+                const _vcNight = document.getElementById("vote-cbar");
+                if (_vcNight) _vcNight.style.display = "none";
+                clearInterval(G.ivals.main);
+                clearInterval(G.ivals.vote);
+                goTab("village", null);
                 if (!IS_HOST && !G._nightRunning) {
                   G._nightRunning = true;
                   _loadSoundsJs(function() { if (!musicMuted) startNightMusic(); });
@@ -1149,12 +1157,15 @@ if (IS_HOST) {
 
             // Aucun éliminé (personne n'a voté ou pas de résultat)
             if (!vr.eliminated) {
-              addChat("⏰ <em>Personne n'a voté — la nuit tombe sans élimination.</em>", true);
-              document.getElementById("vote-cbar").style.display = "none";
+              if (IS_HOST) addChat("⏰ <em>Personne n'a voté — la nuit tombe sans élimination.</em>", true);
+              const _vc0 = document.getElementById("vote-cbar");
+              if (_vc0) _vc0.style.display = "none";
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               G.voteStarted = false;
               G.voteListening = false;
-              setTimeout(() => { if (!G.gameEnded) runNight(); }, 1000);
+              goTab("village", null);
+              if (IS_HOST) setTimeout(() => { if (!G.gameEnded) runNight(); }, 800);
+              // Les non-hôtes attendent phase:"night" via Firebase
               return;
             }
 
@@ -1163,10 +1174,13 @@ if (IS_HOST) {
             if (!t || G._voteResultHandled === vr.ts) return;
             G._voteResultHandled = vr.ts;
 
-            document.getElementById("vote-cbar").style.display = "none";
+            const _vc = document.getElementById("vote-cbar");
+            if (_vc) _vc.style.display = "none";
             if (G.voteListener) { G.voteListener(); G.voteListener = null; }
             G.voteStarted = false;
             G.voteListening = false;
+            // FIX : fermer la page vote immédiatement pour tous
+            goTab("village", null);
 
             showVoteResult(vr.tally || {}, t, vr.maxVotes || 0, () => {
               kill(t.id);
@@ -2088,7 +2102,6 @@ if (IS_HOST) {
         G.phase = "night";
         G.hasVoted = false;
         G._nightRunning = false;
-        // FIX tours suivants : réinitialiser tous les états du vote
         G.voteStarted = false;
         G.voteListening = false;
         G._lastVoteResultTs = null;
@@ -2098,6 +2111,12 @@ if (IS_HOST) {
         G.isRunoff = false;
         G.runoffCandidates = null;
         if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+        // FIX : cacher tous les timers de jour au début de la nuit
+        const _mcR = document.getElementById("main-cbar");
+        if (_mcR) _mcR.style.display = "none";
+        const _vcR = document.getElementById("vote-cbar");
+        if (_vcR) _vcR.style.display = "none";
+        goTab("village", null);
         setPageBg("night");
         lockVoteBtn(false);
         G.actDone = false;
@@ -2629,20 +2648,25 @@ if (IS_HOST) {
         G.voteStarted = true;
         G.hasVoted = false;
         lockVoteBtn(false);
+        const _voteStartTs = Date.now();
+        const _voteDur = 15; // 15 secondes fixes
         if (IS_HOST) {
-          const voteStart = Date.now();
-          const voteDur = parseInt(localStorage.getItem("lg_vote_duration") || 15);
-          // FIX : écrire phaseStart ET voteOpen dans le même update
-          // pour que les non-hôtes aient les deux infos simultanément
+          // FIX : tout en un seul update atomique — voteOpen + phaseStart ensemble
           update(ref(db, "salons/" + SID + "/gameState"), {
             phase: "vote",
             voteOpen: true,
+            voteResult: null,
             alive: Object.assign({}, G.alive),
             turn: G.turn,
-            phaseStart: voteStart,
-            phaseDuration: voteDur,
+            phaseStart: _voteStartTs,
+            phaseDuration: _voteDur,
           });
         }
+        // FIX : démarrer aussi le timer localement pour l'hôte sans attendre Firebase
+        const _vFill = document.getElementById("vote-fill");
+        if (_vFill) { _vFill.style.background = "#be6d6d"; _vFill.style.width = "100%"; }
+        const _vCbar = document.getElementById("vote-cbar");
+        if (_vCbar) _vCbar.style.display = "block";
         // FIX double msg : seul l'hôte écrit ce message
         if (IS_HOST) addChat(
           "🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?",
@@ -2686,18 +2710,15 @@ if (IS_HOST) {
             phase: "vote",
           });
         }
-        // FIX : rendre le chrono rouge et visible immédiatement
-        const voteFill = document.getElementById("vote-fill");
-        if (voteFill) { voteFill.style.background = "#be6d6d"; voteFill.style.width = "100%"; }
-        document.getElementById("vote-cbar").style.display = "block";
-
+        clearInterval(G.ivals.vote);
         G.ivals.vote = startTimerFromTs(
-          voteStart,
-          VOTE_DURATION,
+          _voteStartTs,
+          _voteDur,
           "vote-fill",
           "vote-time",
           () => {
-            document.getElementById("vote-cbar").style.display = "none";
+            const _vc2 = document.getElementById("vote-cbar");
+            if (_vc2) _vc2.style.display = "none";
             if (G.voteListener) { G.voteListener(); G.voteListener = null; }
             if (IS_HOST) resolveVotes();
           }
