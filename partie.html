@@ -1505,13 +1505,20 @@ if (IS_HOST) {
         function _startCountdown(tsStart) {
           if (_cdStarted) return;
           _cdStarted = true;
+
+          function _getRem() {
+            // tsStart peut être dans le futur (DELAY_MS) → on plafonne à REVEAL_DURATION
+            const elapsed = Math.floor((Date.now() - tsStart) / 1000);
+            return Math.max(0, Math.min(REVEAL_DURATION, REVEAL_DURATION - elapsed));
+          }
+
           // Affichage immédiat
-          const remNow = Math.max(0, REVEAL_DURATION - Math.floor((Date.now() - tsStart) / 1000));
+          const remNow = _getRem();
           if (cdEl) cdEl.textContent = remNow;
           if (remNow <= 0) { startFirstNight(); return; }
 
           let _cdInterval = setInterval(() => {
-            const rem = Math.max(0, REVEAL_DURATION - Math.floor((Date.now() - tsStart) / 1000));
+            const rem = _getRem();
             if (cdEl) {
               cdEl.textContent = rem;
               cdEl.style.borderColor = rem <= 5 ? "#be6d6d" : "var(--accent)";
@@ -1525,28 +1532,28 @@ if (IS_HOST) {
           }, 300);
         }
 
+        // ── Synchronisation parfaite : timestamp FUTUR ──────────────────────
+        // L'hôte écrit gameStartTs = maintenant + DELAY_MS.
+        // Cela donne le temps à tous les joueurs de finir init() avant que
+        // le décompte ne commence. Tout le monde voit donc 15s au départ.
+        const DELAY_MS = 3000; // 3s pour que les non-hôtes finissent init()
+
         if (IS_HOST) {
-          // L'hôte écrit le timestamp et l'écoute lui aussi via onValue
-          // → même point de départ que tous les autres joueurs
-          const tsStart = Date.now();
+          const tsStart = Date.now() + DELAY_MS;
           update(ref(db, "salons/" + SID + "/gameState"), { gameStartTs: tsStart, status: "playing" });
-          // Lecture immédiate depuis le snapshot local (pas de round-trip réseau)
           _startCountdown(tsStart);
         } else {
-          // Non-hôte : écoute temps réel du timestamp — déclenche dès qu'il arrive
+          // Non-hôte : écouter gameStartTs en temps réel
           const _gsRef = ref(db, "salons/" + SID + "/gameState/gameStartTs");
           const _unsubTs = onValue(_gsRef, (snap) => {
             if (!snap.exists()) return;
-            _unsubTs(); // une seule lecture suffit
+            _unsubTs();
             _startCountdown(snap.val());
           });
-          // Sécurité : si le snapshot n'arrive pas en 10s → démarrer quand même
+          // Sécurité : si le snapshot n'arrive pas en 15s → démarrer quand même
           setTimeout(() => {
-            if (!_cdStarted) {
-              _unsubTs();
-              startFirstNight();
-            }
-          }, 10000);
+            if (!_cdStarted) { _unsubTs(); startFirstNight(); }
+          }, 15000);
         }
       }
 
