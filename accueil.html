@@ -419,10 +419,37 @@
           margin-bottom: 0.6rem;
         }
       }
+
+      /* ── Chat flottant amis ─────────────────────────────── */
+      .cw{position:fixed;bottom:0;width:290px;background:#0e1118;border-radius:14px 14px 0 0;border:1px solid #252d3a;border-bottom:none;z-index:400;display:none;flex-direction:column;box-shadow:0 -4px 24px rgba(0,0,0,0.55)}
+      .cw.open{display:flex}
+      .cw.minimized .cw-body{display:none}
+      .cw-hdr{padding:8px 12px;background:#10131c;border-radius:14px 14px 0 0;border-bottom:1px solid #1e2535;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;gap:8px}
+      .cw-hdr:hover{background:#141820}
+      .cw-msgs{height:190px;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:4px;scrollbar-width:thin;scrollbar-color:#252d3a transparent}
+      .cb{padding:6px 10px;border-radius:10px;max-width:85%;font-size:0.8rem;word-break:break-word;line-height:1.4}
+      .cb-me{background:#2a1a00;border:1px solid var(--accent);color:var(--highlight);align-self:flex-end;border-radius:10px 10px 2px 10px}
+      .cb-them{background:#1c2230;border:1px solid #252d3a;color:var(--text);align-self:flex-start;border-radius:10px 10px 10px 2px}
+      .cb-sys{font-style:italic;color:#555;font-size:0.7rem;text-align:center;align-self:center}
+      .cb-time{font-size:0.58rem;color:#555;margin-top:1px;display:block}
+      #chat-dock-acc{position:fixed;bottom:0;left:50%;transform:translateX(-50%);display:none;gap:6px;padding:6px 12px;background:rgba(11,14,20,0.97);border-radius:14px 14px 0 0;border:1px solid #1e2535;border-bottom:none;z-index:399;align-items:flex-end;box-shadow:0 -4px 20px rgba(0,0,0,0.4)}
+      .dock-btn{position:relative;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 6px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid #252d3a;transition:0.15s;min-width:48px}
+      .dock-btn:hover{border-color:var(--accent)}
+      .dock-btn.active{background:rgba(201,164,76,0.12);border-color:var(--accent)}
+      .dock-unread{position:absolute;top:-4px;right:-4px;background:#be4444;color:#fff;border-radius:50%;width:15px;height:15px;font-size:0.52rem;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #0b0e14}
+      .dot-on-sm{width:8px;height:8px;border-radius:50%;background:#6dbe6d;box-shadow:0 0 4px #6dbe6d;display:inline-block;flex-shrink:0}
+      .dot-off-sm{width:8px;height:8px;border-radius:50%;background:#444;display:inline-block;flex-shrink:0}
     </style>
   </head>
   <body style="position: relative">
     <div class="notif" id="notif"></div>
+    <div id="chat-wins-acc"></div>
+    <div id="chat-dock-acc"></div>
+    <!-- Toast ami en ligne -->
+    <div id="friend-online-toast" style="position:fixed;bottom:80px;left:16px;background:#1a2a1a;border:1px solid #6dbe6d;border-radius:12px;padding:10px 16px;font-size:0.82rem;color:#6dbe6d;z-index:500;display:none;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,0.5);max-width:260px;cursor:pointer">
+      <span id="friend-online-txt">● Ami en ligne</span>
+      <button onclick="document.getElementById('friend-online-toast').style.display='none'" style="background:none;border:none;color:#555;cursor:pointer;margin-left:auto;font-size:1rem;line-height:1">✕</button>
+    </div>
 
     <nav class="navbar">
       <div class="navbar-brand">🐺 Les Loups Garous d'Hurlebois</div>
@@ -1098,6 +1125,7 @@
         ref,
         set,
         get,
+        push,
         update,
         onValue,
         remove,
@@ -1536,6 +1564,278 @@
           }
         });
       }
+      initRoleCardTap();
+
+      // ════════════════════════════════════════════════════════════
+      // WIDGET CHAT AMIS — accessible depuis l'accueil
+      // ════════════════════════════════════════════════════════════
+      (function() {
+        const ME2 = me;
+        let friendsData = { friends: [], requestsIn: [], requestsOut: [] };
+        let usersCache2 = {};
+        let presCache2 = {};
+        let prevPresCache2 = {};
+        let openChats2 = {};
+        let typingTimers2 = {};
+
+        function esc2(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+        function online2(uid){ return presCache2[uid] && Date.now()-(presCache2[uid].ts||0)<40000; }
+
+        function chatKey2(a,b){ return [a,b].sort().join('_'); }
+
+        function avatarHtml2(u, size) {
+          size = size || 30;
+          if (u && u.avatarUrl) return `<div style="width:${size}px;height:${size}px;border-radius:50%;overflow:hidden;border:1.5px solid var(--accent);flex-shrink:0"><img src="${u.avatarUrl}" style="width:100%;height:100%;object-fit:cover"/></div>`;
+          return `<div style="width:${size}px;height:${size}px;border-radius:50%;background:#1c2230;border:1.5px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.38)}px;font-weight:700;color:var(--accent);flex-shrink:0">${((u&&u.name)||'?')[0].toUpperCase()}</div>`;
+        }
+
+        // Présence
+        const myPresRef2 = ref(db, 'presence/' + ME2.id);
+        set(myPresRef2, { name: ME2.name, ts: Date.now() });
+        setInterval(() => set(myPresRef2, { name: ME2.name, ts: Date.now() }), 20000);
+
+        onValue(ref(db, 'presence'), (snap) => {
+          const newPres = snap.exists() ? snap.val() : {};
+          // Notifier amis qui passent en ligne
+          friendsData.friends.forEach(fid => {
+            const was = prevPresCache2[fid] && Date.now()-(prevPresCache2[fid].ts||0)<40000;
+            const now2 = newPres[fid] && Date.now()-(newPres[fid].ts||0)<40000;
+            if (!was && now2 && usersCache2[fid]) showFriendOnlineToast(fid);
+          });
+          prevPresCache2 = presCache2;
+          presCache2 = newPres;
+          updateDock2();
+        });
+
+        function showFriendOnlineToast(fid) {
+          const name = usersCache2[fid]?.name || '?';
+          const toast = document.getElementById('friend-online-toast');
+          document.getElementById('friend-online-txt').textContent = '● ' + name + ' est en ligne !';
+          toast.style.display = 'flex';
+          toast.onclick = (e) => { if (e.target.tagName !== 'BUTTON') { openChat2(fid); toast.style.display = 'none'; } };
+          clearTimeout(toast._t);
+          toast._t = setTimeout(() => { toast.style.display = 'none'; }, 6000);
+        }
+
+        // Données amis
+        onValue(ref(db, 'friends/' + ME2.id), async (snap) => {
+          friendsData = snap.exists() ? snap.val() : {};
+          ['friends','requestsIn','requestsOut'].forEach(k => {
+            if (!friendsData[k]) friendsData[k] = [];
+            else if (!Array.isArray(friendsData[k])) friendsData[k] = Object.values(friendsData[k]);
+          });
+          const missing = [...friendsData.friends].filter(id => !usersCache2[id]);
+          await Promise.all(missing.map(async id => {
+            const s = await get(ref(db, 'users/' + id));
+            if (s.exists()) usersCache2[id] = s.val();
+          }));
+          updateDock2();
+          // Écouter les messages non lus pour le badge dans la navbar
+          listenUnreadBadge();
+        });
+
+        function listenUnreadBadge() {
+          friendsData.friends.forEach(fid => {
+            const key = chatKey2(ME2.id, fid);
+            onValue(ref(db, 'privMessages/' + key), (snap) => {
+              if (!snap.exists()) return;
+              const msgs = Object.values(snap.val());
+              const unread = msgs.filter(m => m.from !== ME2.id && !m.read).length;
+              // Mettre à jour le badge amis dans la navbar
+              const badge = document.getElementById('badge-amis');
+              if (badge) {
+                const total = parseInt(badge.textContent) || 0;
+                if (unread > 0) { badge.textContent = unread; badge.classList.add('show'); }
+              }
+              // Mettre à jour unread dans openChats
+              if (openChats2[fid]) {
+                const isMin = openChats2[fid].win.classList.contains('minimized');
+                if (isMin) { openChats2[fid].unread = unread; updateDock2(); }
+                else { markRead2(fid); }
+              }
+            });
+          });
+        }
+
+        function updateDock2() {
+          const dock = document.getElementById('chat-dock-acc');
+          if (!dock) return;
+          const entries = Object.entries(openChats2);
+          if (!entries.length) { dock.style.display = 'none'; return; }
+          dock.style.display = 'flex';
+          dock.innerHTML = entries.map(([fid, chat]) => {
+            const u = usersCache2[fid];
+            const on = online2(fid);
+            const unread = chat.unread || 0;
+            const isMin = chat.win.classList.contains('minimized');
+            return `<div class="dock-btn ${isMin?'':'active'}" onclick="window._openChat2('${fid}')">
+              <div style="position:relative">
+                ${avatarHtml2(u, 28)}
+                <span class="${on?'dot-on-sm':'dot-off-sm'}" style="position:absolute;bottom:0;right:0;border:2px solid #0b0e14"></span>
+                ${unread>0?`<span class="dock-unread">${unread}</span>`:''}
+              </div>
+              <span style="font-size:0.52rem;color:#888;white-space:nowrap;max-width:48px;overflow:hidden;text-overflow:ellipsis">${esc2(u?.name||'?')}</span>
+            </div>`;
+          }).join('');
+        }
+
+        window._openChat2 = function(fid) { openChat2(fid); };
+
+        function openChat2(fid) {
+          const friend = usersCache2[fid];
+          if (!friend) return;
+          if (openChats2[fid]) {
+            const win = openChats2[fid].win;
+            const minimized = win.classList.toggle('minimized');
+            const minBtn = document.getElementById('cw-min-' + fid);
+            if (minBtn) minBtn.textContent = minimized ? '+' : '−';
+            if (!minimized) { openChats2[fid].unread = 0; markRead2(fid); scrollChat2(fid); }
+            updateDock2();
+            return;
+          }
+          const idx = Object.keys(openChats2).length;
+          const win = document.createElement('div');
+          win.className = 'cw open';
+          win.id = 'cw-' + fid;
+          win.style.right = (16 + idx * 300) + 'px';
+          win.innerHTML = `
+            <div class="cw-hdr" onclick="window._openChat2('${fid}')">
+              <div style="display:flex;align-items:center;gap:7px">
+                ${avatarHtml2(friend, 24)}
+                <span style="font-weight:600;font-size:0.85rem;color:var(--highlight)">${esc2(friend.name)}</span>
+                <span class="${online2(fid)?'dot-on-sm':'dot-off-sm'}"></span>
+              </div>
+              <div style="display:flex;gap:4px;align-items:center">
+                <span id="cw-min-${fid}" style="color:#555;font-size:0.85rem;line-height:1">−</span>
+                <button onclick="event.stopPropagation();window._closeChat2('${fid}')"
+                  style="background:none;border:none;color:#555;cursor:pointer;font-size:0.9rem;line-height:1;padding:0 2px">✕</button>
+              </div>
+            </div>
+            <div class="cw-body">
+              <div class="cw-msgs" id="cw-msgs-${fid}"><div class="cb cb-sys">Chargement…</div></div>
+              <div id="cw-typing-${fid}" style="font-size:0.65rem;color:#888;font-style:italic;padding:2px 8px;min-height:14px"></div>
+              <div style="padding:7px;border-top:1px solid #1e2535;display:flex;gap:5px">
+                <input type="text" id="cw-inp-${fid}" placeholder="Message…"
+                  style="flex:1;margin-bottom:0;padding:5px 9px;font-size:0.8rem"
+                  onkeydown="if(event.key==='Enter') window._sendMsg2('${fid}')"
+                  oninput="window._onTyping2('${fid}')" maxlength="500"/>
+                <button class="btn" style="padding:4px 10px;font-size:0.85rem"
+                  onclick="window._sendMsg2('${fid}')">↗</button>
+              </div>
+            </div>`;
+          document.getElementById('chat-wins-acc').appendChild(win);
+          openChats2[fid] = { win, unread: 0 };
+          listenChat2(fid);
+          listenTyping2(fid);
+          markRead2(fid);
+          updateDock2();
+        }
+
+        window._closeChat2 = function(fid) {
+          const c = openChats2[fid];
+          if (!c) return;
+          if (c.unsub) c.unsub();
+          if (c.unsubTyping) c.unsubTyping();
+          c.win.remove();
+          delete openChats2[fid];
+          updateDock2();
+        };
+
+        function listenChat2(fid) {
+          const key = chatKey2(ME2.id, fid);
+          const unsub = onValue(ref(db, 'privMessages/' + key), (snap) => {
+            const box = document.getElementById('cw-msgs-' + fid);
+            if (!box) return;
+            if (!snap.exists()) { box.innerHTML = '<div class="cb cb-sys">Début de la conversation 💬</div>'; return; }
+            const msgs = Object.values(snap.val()).sort((a,b)=>(a.t||0)-(b.t||0));
+            const atBot = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+            box.innerHTML = msgs.map(m => {
+              const isMe = m.from === ME2.id;
+              const time = new Date(m.t||Date.now()).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+              return `<div class="cb ${isMe?'cb-me':'cb-them'}">
+                ${!isMe?`<div style="font-size:0.6rem;color:#888;margin-bottom:1px">${esc2(m.author)}</div>`:''}
+                ${esc2(m.text)}<span class="cb-time">${time}${isMe?(m.read?' ✓✓':' ✓'):''}</span></div>`;
+            }).join('');
+            const chat = openChats2[fid];
+            if (chat) {
+              const isMin = chat.win.classList.contains('minimized');
+              const unread = msgs.filter(m=>m.from!==ME2.id&&!m.read).length;
+              if (isMin && unread > (chat.unread||0)) {
+                const last = msgs.filter(m=>m.from!==ME2.id).slice(-1)[0];
+                if (last) showMsgToast2(usersCache2[fid]?.name, last.text, fid);
+              }
+              chat.unread = isMin ? unread : 0;
+              if (!isMin) markRead2(fid);
+              updateDock2();
+            }
+            if (atBot) scrollChat2(fid);
+          });
+          if (openChats2[fid]) openChats2[fid].unsub = unsub;
+        }
+
+        function listenTyping2(fid) {
+          const key = chatKey2(ME2.id, fid);
+          const unsub = onValue(ref(db, 'chatTyping/' + key), (snap) => {
+            const el = document.getElementById('cw-typing-' + fid);
+            if (!el) return;
+            if (!snap.exists()) { el.textContent = ''; return; }
+            const now2 = Date.now();
+            const who = Object.entries(snap.val()).filter(([id,v])=>id!==ME2.id&&now2-(v.ts||0)<3000).map(([,v])=>v.name);
+            el.textContent = who.length ? who[0] + ' écrit…' : '';
+          });
+          if (openChats2[fid]) openChats2[fid].unsubTyping = unsub;
+        }
+
+        window._sendMsg2 = async function(fid) {
+          const inp = document.getElementById('cw-inp-' + fid);
+          const txt = inp?.value.trim();
+          if (!txt) return;
+          inp.value = '';
+          const key = chatKey2(ME2.id, fid);
+          await push(ref(db, 'privMessages/' + key), { from: ME2.id, author: ME2.name, text: txt, t: Date.now(), read: false });
+          set(ref(db, 'chatTyping/' + key + '/' + ME2.id), null);
+          clearTimeout(typingTimers2[fid]);
+        };
+
+        window._onTyping2 = function(fid) {
+          const key = chatKey2(ME2.id, fid);
+          set(ref(db, 'chatTyping/' + key + '/' + ME2.id), { name: ME2.name, ts: Date.now() });
+          clearTimeout(typingTimers2[fid]);
+          typingTimers2[fid] = setTimeout(() => set(ref(db, 'chatTyping/' + key + '/' + ME2.id), null), 2500);
+        };
+
+        async function markRead2(fid) {
+          const key = chatKey2(ME2.id, fid);
+          const snap = await get(ref(db, 'privMessages/' + key));
+          if (!snap.exists()) return;
+          const tasks = [];
+          Object.entries(snap.val()).forEach(([msgId, m]) => {
+            if (m.from !== ME2.id && !m.read)
+              tasks.push(set(ref(db, `privMessages/${key}/${msgId}/read`), true));
+          });
+          await Promise.all(tasks);
+          if (openChats2[fid]) { openChats2[fid].unread = 0; updateDock2(); }
+        }
+
+        function scrollChat2(fid) {
+          setTimeout(() => { const b = document.getElementById('cw-msgs-' + fid); if (b) b.scrollTop = b.scrollHeight; }, 50);
+        }
+
+        function showMsgToast2(name, text, fid) {
+          const toast = document.getElementById('friend-online-toast');
+          const preview = text.length > 30 ? text.slice(0,30)+'…' : text;
+          document.getElementById('friend-online-txt').textContent = '💬 ' + name + ' : ' + preview;
+          toast.style.display = 'flex';
+          toast.onclick = (e) => { if (e.target.tagName !== 'BUTTON') { openChat2(fid); toast.style.display='none'; } };
+          clearTimeout(toast._t);
+          toast._t = setTimeout(() => { toast.style.display='none'; }, 5000);
+        }
+
+        // Exposer pour usage externe (ex: bouton "Chat" sur profil ami)
+        window.openFriendChat = openChat2;
+      })();
+
       initRoleCardTap();
     </script>
   </body>
