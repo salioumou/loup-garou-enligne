@@ -1246,27 +1246,35 @@ if (IS_HOST) {
               G.hasVoted = false;
               lockVoteBtn(false);
               showVoteBadge();
-              renderVoteList();
-              goTab("vote", document.getElementById("tbtn-vote"));
-              // FIX : afficher le timer dans main-cbar (toujours visible)
+
+              // FIX : timer dans main-cbar (toujours visible)
               const _mcNH = document.getElementById("main-cbar");
               const _clNH = document.getElementById("cbar-label");
               const _cfNH = document.getElementById("cbar-fill");
               if (_mcNH) _mcNH.style.display = "block";
-              if (_clNH) _clNH.textContent = "🗳️ Vote en cours !";
+              if (_clNH) _clNH.textContent = "🗳️ Vote — " + gs.phaseDuration + "s !";
               if (_cfNH) { _cfNH.style.background = "#be6d6d"; _cfNH.style.width = "100%"; }
+
               const vcbar = document.getElementById("vote-cbar");
               if (vcbar) vcbar.style.display = "block";
               const vdesc = document.getElementById("vote-desc");
               if (vdesc) vdesc.textContent = "Choisissez le joueur à éliminer :";
               const vfill = document.getElementById("vote-fill");
               if (vfill) { vfill.style.background = "#be6d6d"; vfill.style.width = "100%"; }
+
+              renderVoteList();
+              // FIX : ouvrir le panneau vote AUTOMATIQUEMENT pour les non-hôtes
+              if (G.alive[ME.id] !== false) {
+                goTab("vote", document.getElementById("tbtn-vote"));
+                showGameNotif("🗳️", "C'est l'heure du vote ! Choisissez qui éliminer.", 5000);
+                soundVoteStart();
+              }
+
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
                 (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
               );
               clearInterval(G.ivals.vote);
-              // Timer dans main-cbar (principal, toujours visible)
               G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "cbar-fill", "cbar-time", () => {
                 const _mc4 = document.getElementById("main-cbar");
                 if (_mc4) _mc4.style.display = "none";
@@ -1274,7 +1282,6 @@ if (IS_HOST) {
                 if (_vc3) _vc3.style.display = "none";
                 if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               });
-              // Sync aussi dans vote-fill pour l'overlay
               clearInterval(G.ivals.voteOverlay);
               G.ivals.voteOverlay = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {});
             }
@@ -1504,19 +1511,24 @@ if (IS_HOST) {
         }
 
         if (IS_HOST) {
-          // L'hôte écrit le timestamp de départ dans Firebase
           const tsStart = Date.now();
           update(ref(db, "salons/" + SID + "/gameState"), { gameStartTs: tsStart, status: "playing" });
           _startCountdown(tsStart);
         } else {
-          // Les autres joueurs lisent le timestamp écrit par l'hôte
-          const _gsRef = ref(db, "salons/" + SID + "/gameState/gameStartTs");
-          const _unsubTs = onValue(_gsRef, (snap) => {
-            if (!snap.exists()) return;
-            const tsStart = snap.val();
-            _unsubTs(); // une seule lecture suffit
-            _startCountdown(tsStart);
-          });
+          // Non-hôte : lire gameStartTs — avec retry si pas encore disponible
+          function _waitForStartTs(attempts) {
+            get(ref(db, "salons/" + SID + "/gameState/gameStartTs")).then(snap => {
+              if (snap.exists()) {
+                _startCountdown(snap.val());
+              } else if (attempts < 20) {
+                setTimeout(() => _waitForStartTs(attempts + 1), 500);
+              } else {
+                // Fallback : démarrer maintenant
+                startFirstNight();
+              }
+            });
+          }
+          _waitForStartTs(0);
         }
       }
 
@@ -2655,14 +2667,15 @@ if (IS_HOST) {
         (() => {
           const nbPlayers = G.players.filter(p => G.alive[p.id]).length;
           const DAY_DURATION = G.dayDuration || (nbPlayers <= 8 ? 180 : nbPlayers <= 12 ? 270 : 330);
+          // FIX synchronisation : l'hôte écrit phaseStart dans Firebase
+          // Tous les joueurs (y compris l'hôte) démarrent leur timer depuis ce même timestamp
           const dayStart = Date.now();
+          fill.style.background = "var(--accent)";
           if (IS_HOST) {
             update(ref(db, "salons/" + SID + "/gameState"), {
               phaseStart: dayStart,
               phaseDuration: DAY_DURATION,
               phase: "day",
-              // FIX tours suivants : effacer voteOpen et voteResult pour ne pas
-              // re-déclencher le vote chez les non-hôtes au prochain jour
               voteOpen: false,
               voteResult: null,
               runoffTs: null,
@@ -2672,7 +2685,7 @@ if (IS_HOST) {
               nightStepRole: null,
             });
           }
-          fill.style.background = "var(--accent)";
+          // L'hôte démarre aussi son timer depuis dayStart (identique à Firebase)
           G.ivals.main = startTimerFromTs(
             dayStart,
             DAY_DURATION,
@@ -2680,7 +2693,8 @@ if (IS_HOST) {
             "cbar-time",
             () => {
               document.getElementById("main-cbar").style.display = "none";
-              startVote();
+              if (IS_HOST) startVote();
+              // Non-hôtes : attendent voteOpen via Firebase
             }
           );
         })();
@@ -2732,7 +2746,10 @@ if (IS_HOST) {
         G.isRunoff = false;
         G.runoffCandidates = null;
         renderVoteList();
-        goTab("vote", document.getElementById("tbtn-vote"));
+        // Ouvrir le panneau vote seulement pour les vivants
+        if (G.alive[ME.id] !== false) {
+          goTab("vote", document.getElementById("tbtn-vote"));
+        }
         document.getElementById("vote-cbar").style.display = "block";
         document.getElementById("vote-desc").textContent =
           "Choisissez le joueur à éliminer :";
@@ -2879,6 +2896,14 @@ if (IS_HOST) {
       function lockVoteBtn(locked) {
         const btn = document.getElementById("tbtn-vote");
         if (!btn) return;
+        // Les morts n'ont jamais accès au vote
+        if (G.alive && G.alive[ME.id] === false) {
+          btn.disabled = true;
+          btn.style.opacity = "0.2";
+          btn.style.cursor = "not-allowed";
+          btn.title = "Les morts ne votent pas";
+          return;
+        }
         if (locked) {
           btn.disabled = true;
           btn.style.opacity = "0.4";
@@ -2894,11 +2919,15 @@ if (IS_HOST) {
 
       // Ouvrir le vote seulement si c'est la phase de vote
       window.tryOpenVote = function(btn) {
+        // Les morts ne peuvent pas voter
+        if (G.alive && G.alive[ME.id] === false) {
+          showNotif("❌ Les morts ne votent pas !");
+          return;
+        }
         if (!G.voteStarted) {
           showNotif("⏳ Ce n'est pas encore l'heure du vote !");
           return;
         }
-        // FIX : on peut rouvrir même après avoir voté pour changer son vote
         clearVoteBadge();
         goTab("vote", btn);
       };
@@ -3787,6 +3816,14 @@ if (IS_HOST) {
 
         document.getElementById("vote-btn").disabled = true;
         document.querySelectorAll(".vote-item").forEach(v => v.style.pointerEvents = "none");
+        // Cacher/désactiver le bouton vote dans la barre du bas pour les morts
+        lockVoteBtn(true);
+        const _tbtnVote = document.getElementById("tbtn-vote");
+        if (_tbtnVote) {
+          _tbtnVote.disabled = true;
+          _tbtnVote.style.opacity = "0.2";
+          _tbtnVote.title = "Les morts ne votent pas";
+        }
         document.getElementById("tab-action").innerHTML = `
           <div class="card" style="text-align:center;padding:2rem">
             <div style="font-size:3rem;margin-bottom:1rem">👻</div>
