@@ -802,12 +802,22 @@
         const me = G.players.find((p) => p.id === ME.id);
         G.myRole = me && me.role ? me.role : "villager";
         G.players.forEach((p) => (G.alive[p.id] = true));
-        if (G.myRole === "thief" && sal.surplusRoles) {
-          G.surplusRoles = sal.surplusRoles;
-        } else if (G.myRole === "thief") {
-          const allRoles = G.players.map((p) => p.role);
-          const pool = ["villager", "villager", "seer", "hunter"];
-          G.surplusRoles = pool.slice(0, 2);
+        if (G.myRole === "thief") {
+          // VOLEUR FIX : garantir que les 2 cartes surplus sont TOUJOURS différentes
+          let _sr = sal.surplusRoles ? [...sal.surplusRoles] : [];
+          // Si moins de 2 cartes ou les 2 cartes sont identiques → corriger
+          if (_sr.length < 2 || _sr[0] === _sr[1]) {
+            // Liste des rôles utilisés dans la partie (pour éviter doublons)
+            const _usedRoles = new Set(G.players.map(p => p.role));
+            // Préférer des rôles intéressants différents entre eux
+            const _candidates = ["seer","hunter","witch","savior","cupid","villager","wolf","littlegirl","corbeau","ancien"];
+            // Prendre le premier disponible comme carte A
+            const _roleA = _sr[0] || _candidates.find(r => true) || "villager";
+            // Prendre comme carte B le premier candidat DIFFÉRENT de A
+            const _roleB = _candidates.find(r => r !== _roleA) || (_roleA === "villager" ? "seer" : "villager");
+            _sr = [_roleA, _roleB];
+          }
+          G.surplusRoles = _sr;
         }
         document.addEventListener("click", () => getAC(), { once: true });
         // Afficher le bouton panneau hôte si on est hôte
@@ -1485,12 +1495,21 @@ if (IS_HOST) {
           }
         }
 
-        // ── Compte à rebours synchronisé via Firebase ─────────────────────
-        // L'hôte écrit gameStartTs une seule fois ; tous les joueurs le lisent
-        const REVEAL_DURATION = 15; // secondes pour lire son rôle
+        // ── Compte à rebours 100% synchronisé via Firebase ──────────────────
+        // TOUS les joueurs (hôte ET non-hôtes) lisent le même gameStartTs via
+        // onValue → démarrage identique au même milliseconde pour tout le monde.
+        const REVEAL_DURATION = 15; // secondes pour lire son rôle (identique pour tous)
         const cdEl = document.getElementById("reveal-countdown");
+        let _cdStarted = false; // garde-fou anti-double démarrage
 
         function _startCountdown(tsStart) {
+          if (_cdStarted) return;
+          _cdStarted = true;
+          // Affichage immédiat
+          const remNow = Math.max(0, REVEAL_DURATION - Math.floor((Date.now() - tsStart) / 1000));
+          if (cdEl) cdEl.textContent = remNow;
+          if (remNow <= 0) { startFirstNight(); return; }
+
           let _cdInterval = setInterval(() => {
             const rem = Math.max(0, REVEAL_DURATION - Math.floor((Date.now() - tsStart) / 1000));
             if (cdEl) {
@@ -1503,32 +1522,31 @@ if (IS_HOST) {
               clearInterval(_cdInterval);
               startFirstNight();
             }
-          }, 500);
-          // Déclencher immédiatement si déjà expiré
-          const remNow = Math.max(0, REVEAL_DURATION - Math.floor((Date.now() - tsStart) / 1000));
-          if (cdEl) cdEl.textContent = remNow;
-          if (remNow <= 0) { clearInterval(_cdInterval); startFirstNight(); }
+          }, 300);
         }
 
         if (IS_HOST) {
+          // L'hôte écrit le timestamp et l'écoute lui aussi via onValue
+          // → même point de départ que tous les autres joueurs
           const tsStart = Date.now();
           update(ref(db, "salons/" + SID + "/gameState"), { gameStartTs: tsStart, status: "playing" });
+          // Lecture immédiate depuis le snapshot local (pas de round-trip réseau)
           _startCountdown(tsStart);
         } else {
-          // Non-hôte : lire gameStartTs — avec retry si pas encore disponible
-          function _waitForStartTs(attempts) {
-            get(ref(db, "salons/" + SID + "/gameState/gameStartTs")).then(snap => {
-              if (snap.exists()) {
-                _startCountdown(snap.val());
-              } else if (attempts < 20) {
-                setTimeout(() => _waitForStartTs(attempts + 1), 500);
-              } else {
-                // Fallback : démarrer maintenant
-                startFirstNight();
-              }
-            });
-          }
-          _waitForStartTs(0);
+          // Non-hôte : écoute temps réel du timestamp — déclenche dès qu'il arrive
+          const _gsRef = ref(db, "salons/" + SID + "/gameState/gameStartTs");
+          const _unsubTs = onValue(_gsRef, (snap) => {
+            if (!snap.exists()) return;
+            _unsubTs(); // une seule lecture suffit
+            _startCountdown(snap.val());
+          });
+          // Sécurité : si le snapshot n'arrive pas en 10s → démarrer quand même
+          setTimeout(() => {
+            if (!_cdStarted) {
+              _unsubTs();
+              startFirstNight();
+            }
+          }, 10000);
         }
       }
 
