@@ -234,6 +234,16 @@
   <body style="position: relative">
     <div class="notif" id="notif"></div>
     <div id="chat-windows"></div>
+    <!-- Barre de chats ouverts (icônes persistantes) -->
+    <div id="chat-dock" style="
+      position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+      display:flex;gap:6px;padding:6px 12px;
+      background:rgba(11,14,20,0.95);border-radius:14px 14px 0 0;
+      border:1px solid #1e2535;border-bottom:none;
+      z-index:99;align-items:flex-end;
+      box-shadow:0 -4px 20px rgba(0,0,0,0.4);
+      transition:0.2s;
+    "></div>
 
     <!-- Toast message entrant -->
     <div class="msg-toast" id="msg-toast">
@@ -435,10 +445,31 @@
       heartbeat();
       setInterval(heartbeat, 20000);
 
+      let _prevPresCache = {};
       onValue(ref(db, "presence"), (snap) => {
-        presCache = snap.exists() ? snap.val() : {};
+        const newPres = snap.exists() ? snap.val() : {};
+        // Détecter les amis qui viennent de passer en ligne
+        myData.friends.forEach(fid => {
+          const wasOnline = _prevPresCache[fid] && Date.now() - (_prevPresCache[fid].ts||0) < 40000;
+          const isNow = newPres[fid] && Date.now() - (newPres[fid].ts||0) < 40000;
+          if (!wasOnline && isNow && usersCache[fid]) {
+            showOnlineToast(usersCache[fid].name, fid);
+          }
+        });
+        _prevPresCache = presCache;
+        presCache = newPres;
         renderFriends();
       });
+
+      function showOnlineToast(name, fid) {
+        const t = document.createElement("div");
+        t.style.cssText = "position:fixed;bottom:80px;left:16px;background:#1a2a1a;border:1px solid #6dbe6d;border-radius:12px;padding:10px 16px;font-size:0.82rem;color:#6dbe6d;z-index:300;display:flex;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,0.5);max-width:260px;animation:slideUp 0.25s ease;cursor:pointer";
+        t.innerHTML = `<span class="online-dot dot-online"></span> <strong>${esc(name)}</strong> est en ligne !
+          <button onclick="this.parentNode.remove()" style="background:none;border:none;color:#555;cursor:pointer;margin-left:auto;font-size:1rem">✕</button>`;
+        t.onclick = (e) => { if (e.target.tagName !== "BUTTON") { openChat(fid); t.remove(); } };
+        document.body.appendChild(t);
+        setTimeout(() => t.remove(), 6000);
+      }
 
       function online(uid) {
         return presCache[uid] && Date.now() - (presCache[uid].ts || 0) < 40000;
@@ -774,23 +805,51 @@
         return [a, b].sort().join("_");
       }
 
+      function updateDock() {
+        const dock = document.getElementById("chat-dock");
+        if (!dock) return;
+        const entries = Object.entries(openChats);
+        if (!entries.length) { dock.style.display = "none"; return; }
+        dock.style.display = "flex";
+        dock.innerHTML = entries.map(([fid, chat]) => {
+          const u = usersCache[fid];
+          const on = online(fid);
+          const unread = chat.unread || 0;
+          const isMin = chat.win.classList.contains("minimized");
+          return `<div onclick="openChat('${fid}')" style="
+            position:relative;cursor:pointer;display:flex;flex-direction:column;
+            align-items:center;gap:2px;padding:4px 6px;border-radius:10px;
+            background:${isMin ? 'rgba(255,255,255,0.05)' : 'rgba(201,164,76,0.15)'};
+            border:1px solid ${isMin ? '#252d3a' : 'var(--accent)'};
+            transition:0.15s;min-width:50px;
+          ">
+            <div style="position:relative">
+              ${avatarHtml(u || {name:'?'}, 28)}
+              <span class="online-dot ${on?'dot-online':'dot-offline'}"
+                style="position:absolute;bottom:0;right:0;border:2px solid #0b0e14;width:7px;height:7px"></span>
+              ${unread > 0 ? `<span style="position:absolute;top:-4px;right:-4px;background:#be4444;color:#fff;border-radius:50%;width:15px;height:15px;font-size:0.55rem;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #0b0e14">${unread}</span>` : ''}
+            </div>
+            <span style="font-size:0.55rem;color:#888;white-space:nowrap;max-width:50px;overflow:hidden;text-overflow:ellipsis">${esc(u?.name||'?')}</span>
+          </div>`;
+        }).join("");
+      }
+
       window.openChat = function (fid) {
         const friend = usersCache[fid];
         if (!friend) return;
 
-        // Déjà ouverte : basculer minimiser
+        // Déjà ouverte : basculer minimiser/maximiser
         if (openChats[fid]) {
           const win = openChats[fid].win;
           const minimized = win.classList.toggle("minimized");
-          document.getElementById("min-" + fid).textContent = minimized
-            ? "+"
-            : "−";
+          document.getElementById("min-" + fid).textContent = minimized ? "+" : "−";
           if (!minimized) {
             openChats[fid].unread = 0;
             renderFriends();
             markRead(fid);
             scrollChat(fid);
           }
+          updateDock();
           return;
         }
 
@@ -800,6 +859,7 @@
         win.className = "chat-window open";
         win.id = "chat-win-" + fid;
         win.style.right = 20 + idx * 310 + "px";
+        win.style.bottom = "0px";
 
         win.innerHTML = `
           <div class="chat-header" onclick="toggleMin('${fid}')">
@@ -839,21 +899,21 @@
         listenChat(fid);
         listenTyping(fid);
         markRead(fid);
+        updateDock();
       };
 
       window.toggleMin = function (fid) {
         const c = openChats[fid];
         if (!c) return;
         const minimized = c.win.classList.toggle("minimized");
-        document.getElementById("min-" + fid).textContent = minimized
-          ? "+"
-          : "−";
+        document.getElementById("min-" + fid).textContent = minimized ? "+" : "−";
         if (!minimized) {
           c.unread = 0;
           renderFriends();
           markRead(fid);
           scrollChat(fid);
         }
+        updateDock();
       };
 
       window.closeChat = function (fid) {
@@ -864,6 +924,7 @@
         c.win.remove();
         delete openChats[fid];
         renderFriends();
+        updateDock();
       };
 
       function listenChat(fid) {
@@ -922,6 +983,7 @@
               }
               chat.unread = newUnread;
               renderFriends();
+              updateDock();
             } else if (!isMin) {
               markRead(fid);
             }
