@@ -1274,16 +1274,20 @@ if (IS_HOST) {
             return;
           }
 
-          // FIX boucle cartes : détecter un nouveau tour et réinitialiser la clé
-          const currentTurn = gs.turn || 1;
-          if (currentTurn !== _lastNightTurn) {
-            _lastNightTurn = currentTurn;
+          // FIX boucle cartes : utiliser nightStartTs pour identifier le tour courant
+          // nightStartTs est écrit par l'hôte au début de chaque nuit
+          const currentNightTs = gs.nightStartTs || 0;
+          if (currentNightTs !== _lastNightTurn) {
+            _lastNightTurn = currentNightTs;
             _timerLastKey = null; // reset pour ce nouveau tour de nuit
           }
 
-          if (gs.nightStepStart && gs.nightStepDuration && gs.nightStepLabel) {
-            const key = gs.nightStepStart + "|" + gs.nightStepLabel;
-            if (key === _timerLastKey) return; // déjà affiché pour cette étape
+          if (gs.nightStepStart && gs.nightStepDuration && gs.nightStepLabel && gs.nightStartTs) {
+            // Ignorer les étapes qui ne correspondent pas au tour courant
+            if (gs.nightStartTs !== _lastNightTurn) return;
+
+            const key = gs.nightStartTs + "|" + gs.nightStepStart + "|" + gs.nightStepLabel;
+            if (key === _timerLastKey) return; // déjà affiché
             _timerLastKey = key;
 
             const seq = (typeof NIGHT_SEQ !== "undefined")
@@ -1291,13 +1295,12 @@ if (IS_HOST) {
               : null;
             const img = seq ? seq.img : null;
 
-            // Chronomètre visible par TOUS
+            // Chronomètre pour TOUS
             if (window._showNightTimer) {
               window._showNightTimer(gs.nightStepLabel, gs.nightStepStart, gs.nightStepDuration, img);
             }
 
-            // Carte d'annonce pour les NON-HÔTES uniquement
-            // L'hôte l'affiche directement dans nextNightStep()
+            // Carte d'annonce pour les NON-HÔTES seulement
             if (!IS_HOST && seq) {
               showNightTransition(gs.nightStepLabel + " se réveille…", seq.d || "", null, img);
             }
@@ -1776,20 +1779,25 @@ if (IS_HOST) {
             });
           }
 
-          // Débloquer AudioContext iOS Safari
+          // Débloquer AudioContext iOS Safari avant de jouer
           function _doPlay() {
             s.currentTime = 0;
             var p = s.play();
             if (p) p.catch(function(e) {
-              console.warn("[AUDIO] play failed:", key, e.name);
-              // NotAllowedError = pas encore de geste utilisateur → réessayer après interaction
-              if (e.name === "NotAllowedError") {
-                document.addEventListener("click", function _retry() {
-                  document.removeEventListener("click", _retry);
-                  s.currentTime = 0; s.play().catch(function(){});
-                }, { once: true });
+              // Son ignoré si audio pas encore débloqué — sera rejoué au prochain geste
+              if (e.name === "NotAllowedError" || e.name === "NotSupportedError") {
+                // Mettre en file pour le prochain clic uniquement si c'est un effet (pas bg)
+                if (!opts.isBg) {
+                  document.addEventListener("click", function _r() {
+                    document.removeEventListener("click", _r);
+                    if (AC && AC.state === "suspended") {
+                      AC.resume().then(function(){ s.currentTime = 0; s.play().catch(function(){}); });
+                    } else {
+                      s.currentTime = 0; s.play().catch(function(){});
+                    }
+                  }, { once: true });
+                }
               }
-              // si AudioContext suspendu
               if (AC && AC.state === "suspended") {
                 AC.resume().then(function(){ s.currentTime = 0; s.play().catch(function(){}); });
               }
@@ -1830,20 +1838,33 @@ if (IS_HOST) {
         document.removeEventListener('click', _onFirstInteraction);
         document.removeEventListener('touchstart', _onFirstInteraction);
 
+        // Débloquer l'AudioContext iOS immédiatement au premier geste
+        if (typeof getAC === 'function') {
+          try {
+            var ac = getAC();
+            if (ac.state === "suspended") ac.resume().catch(function(){});
+          } catch(e) {}
+        }
+
         _loadSoundsJs(function() {
           _initSoundVolumes();
-          // Débloquer l'AudioContext (politique autoplay)
-          if (typeof getAC === 'function') { try { getAC(); } catch(e) {} }
+          // Re-débloquer après chargement (iOS peut re-suspendre)
+          if (typeof getAC === 'function') {
+            try {
+              var ac2 = getAC();
+              if (ac2.state === "suspended") ac2.resume().catch(function(){});
+            } catch(e) {}
+          }
+          // Rejouer les sons en attente
+          var pending = _pendingSounds.splice(0);
+          pending.forEach(function(p) { _safePlay(p.key, p.opts); });
 
-          // G.phase vaut "night" par défaut MAIS les données réelles
-          // arrivent de Firebase via init() (async). On attend qu'init()
-          // ait fini ET que sounds.js soit chargé avant de jouer la musique.
+          // Démarrer la musique selon la phase courante
           var _musicTries = 0;
           function _tryStartMusic() {
             _musicTries++;
-            if (_musicTries > 40) return; // abandon après ~12s
-            if (currentMusic) return;     // déjà en cours
-            // G._initDone est mis à true à la fin de init()
+            if (_musicTries > 40) return;
+            if (currentMusic) return;
             if (G && G._initDone && _soundsLoaded) {
               if (G.phase === "night" && !musicMuted) startNightMusic();
               else if (G.phase === "day" && !musicMuted) startDayMusic();
@@ -2097,17 +2118,24 @@ if (IS_HOST) {
         createMuteBtn();
         setTimeout(() => startNightMusic(), 800);
         if (IS_HOST) {
+          const _nightStartTs = Date.now();
+          G._currentNightTs = _nightStartTs;
           update(ref(db, "salons/" + SID + "/gameState"), {
             phase: "night",
             turn: G.turn,
+            nightStartTs: _nightStartTs,
             alive: Object.assign({}, G.alive),
             voteOpen: false,
+            voteResult: null,
             winner: null,
             nightStepStart: null,
             nightStepDuration: null,
             nightStepLabel: null,
             nightStepRole: null,
           });
+        } else {
+          // Non-hôte : tracker le tour localement
+          G._currentNightTs = null; // sera mis à jour via onValue
         }
         G.activeSeq = NIGHT_SEQ.filter((s) => {
           // Nuit 1 uniquement
@@ -2186,6 +2214,7 @@ if (IS_HOST) {
           nightStepLabel: cur.l,
           nightStepDuration: cur.s,
           nightStepStart: stepStart,
+          nightStartTs: G._currentNightTs || stepStart,
         });
         if (window._showNightTimer) {
           window._showNightTimer(cur.l, stepStart, cur.s, cur.img);
