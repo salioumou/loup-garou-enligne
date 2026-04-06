@@ -1198,7 +1198,7 @@ if (IS_HOST) {
                     p.powerLost = true;
                   }
                 });
-                addChat("🧓💥 <strong>L'Ancien a été exécuté par le village !</strong> Dans un dernier souffle, il maudit ses bourreaux… <strong>Tous les pouvoirs du village disparaissent !</strong>", true);
+                if (IS_HOST) addChat("🧓💥 <strong>L'Ancien a été exécuté par le village !</strong> Dans un dernier souffle, il maudit ses bourreaux… <strong>Tous les pouvoirs du village disparaissent !</strong>", true);
               }
 
               renderPanels();
@@ -2381,7 +2381,8 @@ if (IS_HOST) {
           () => {
             document.getElementById("action-cbar").style.display = "none";
             if (!G.actDone) {
-              addChat("⏰ Temps écoulé — action ignorée.", true);
+              // PRIVÉ : seulement le joueur concerné voit ce message
+              addChatLocal("⏰ Temps écoulé — action ignorée.");
               G.actDone = true;
             }
             document.getElementById("wolf-attack-btn") && (document.getElementById("wolf-attack-btn").style.display = "none");
@@ -2436,7 +2437,7 @@ if (IS_HOST) {
             const littleGirl = G.players.find(p => p.role === "littlegirl" && G.alive[p.id] && !p.powerLost);
             if (littleGirl && !G.victim && !G.savedWitch && Math.random() < 0.30) {
               G.victim = littleGirl.id;
-              addChat("👧 <em>La Petite Fille a été repérée en train d'espionner…</em>", true);
+              if (IS_HOST) addChat("👧 <em>La Petite Fille a été repérée en train d'espionner…</em>", true);
             }
 
             // N'utiliser un bot aléatoire que si aucun joueur humain n'a déjà
@@ -2929,7 +2930,7 @@ if (IS_HOST) {
         });
         G.corbeauBonus = {}; // Réinitialiser
         if (!Object.keys(tally).length) {
-          addChat("⏰ <em>Personne n'a voté — égalité !</em>", true);
+          if (IS_HOST) addChat("⏰ <em>Personne n'a voté — égalité !</em>", true);
           addJournal("Jour " + G.turn + " — aucun vote.");
           set(ref(db, "salons/" + SID + "/votes"), null);
           runNight();
@@ -2969,7 +2970,7 @@ if (IS_HOST) {
         if (candidates.length > 1 && G.isRunoff) {
           G.isRunoff = false;
           G.runoffCandidates = null;
-          addChat("⚖️ <em>Toujours égalité après le second tour — personne n'est éliminé !</em>", true);
+          if (IS_HOST) addChat("⚖️ <em>Toujours égalité après le second tour — personne n'est éliminé !</em>", true);
           addJournal("Jour " + G.turn + " — double égalité, aucune élimination.");
           set(ref(db, "salons/" + SID + "/votes"), null);
           runNight();
@@ -3481,7 +3482,8 @@ if (IS_HOST) {
           G.potions.save = false;
           if (IS_HOST) update(ref(db, "salons/" + SID + "/gameState"), { potions: G.potions });
           playSound("witch");
-          addChat("💚 Vous sauvez la victime des loups !", true);
+          // PRIVÉ : seulement la Sorcière voit qu'elle a sauvé
+          addChatLocal("💚 Vous sauvez la victime des loups !");
           addJournal("Sorcière : potion vie utilisée");
         } else if (type === "wkill") {
           if (!t) {
@@ -3492,15 +3494,12 @@ if (IS_HOST) {
           G.potions.kill = false;
           if (IS_HOST) update(ref(db, "salons/" + SID + "/gameState"), { potions: G.potions });
           playSound("witch");
-          addChat(
-            "☠️ Vous utilisez la potion de mort sur <strong>" +
-              t.name +
-              "</strong>.",
-            true
-          );
+          // PRIVÉ : seulement la Sorcière voit sa cible
+          addChatLocal("☠️ Vous utilisez la potion de mort sur <strong>" + t.name + "</strong>.");
           addJournal("Sorcière : potion mort → " + t.name);
         } else if (type === "wpass") {
-          addChat("🧙‍♀️ La Sorcière ne fait rien cette nuit.", true);
+          // PRIVÉ : seulement la Sorcière
+          addChatLocal("🧙‍♀️ Vous ne faites rien cette nuit.");
         } else if (type === "voyantebavarde") {
           if (!t) {
             showNotif("Choisissez une cible !");
@@ -3543,10 +3542,8 @@ if (IS_HOST) {
           if (myPlayer) myPlayer.role = stolen;
           G.myRole = stolen;
           G.surplusRoles = surplusRoles.filter((_, i) => i !== idx3);
-          addChat(
-            `🃏 <em>Le Voleur choisit un nouveau rôle dans l'ombre…</em>`,
-            true
-          );
+          // PRIVÉ : seulement le Voleur voit son nouveau rôle
+          addChatLocal(`🃏 Vous volez le rôle : <strong>${rd.n}</strong> !`);
           addJournal("Voleur : vole le rôle " + rd.n);
           showNotif(`🃏 Vous avez volé le rôle : ${rd.n} !`);
         } else if (type === "montreurdours") {
@@ -3572,7 +3569,8 @@ if (IS_HOST) {
           }
           G.corbeauTarget = t.id;
           G.corbeauBonus[t.id] = (G.corbeauBonus[t.id] || 0) + 2;
-          addChat(`🪶 Le Corbeau désigne un suspect dans l'ombre…`, true);
+          // PRIVÉ : le Corbeau voit sa cible, le village verra juste +2 votes au prochain scrutin
+          addChatLocal("🪶 Vous désignez <strong>" + t.name + "</strong> — il recevra +2 voix au prochain vote.");
           addJournal("Corbeau : désigne " + t.name + " (+2 voix)");
         } else if (type === "whitewolf") {
           if (!t) {
@@ -3584,10 +3582,9 @@ if (IS_HOST) {
             return;
           }
           kill(t.id);
-          addChat(
-            `🐺 Le Loup Blanc élimine <strong>${t.name}</strong> dans l'ombre…`,
-            true
-          );
+          // Message public vague (le village voit qu'un loup est mort mais pas comment)
+          if (IS_HOST) addChat(`🐺 Un loup disparaît dans la nuit…`, true);
+          addChatLocal(`🐺 Vous éliminez <strong>${t.name}</strong>.`);
           addJournal("Loup Blanc : élimine " + t.name);
           renderPanels();
           renderInfoPlayers();
@@ -3602,7 +3599,8 @@ if (IS_HOST) {
           }
           G.grandMechantUsed = true;
           G.grandMechantVictim = t.id;
-          addChat(`😈 Le Grand Méchant Loup désigne une 2ème proie…`, true);
+          // PRIVÉ : le village ne doit pas savoir qu'il y a une 2ème cible
+          addChatLocal(`😈 Vous désignez <strong>${t.name}</strong> comme 2ème proie.`);
           addJournal("Grand Méchant Loup : 2ème cible " + t.name);
         } else if (type === "enfantsauvage") {
           if (!t) {
@@ -3611,10 +3609,8 @@ if (IS_HOST) {
           }
           G.wildChildModel = t.id;
           const p1 = G.players.find((p) => p.id === t.id);
-          addChat(
-            `🏹 L'Enfant Sauvage choisit <strong>${p1?.name}</strong> comme modèle…`,
-            true
-          );
+          // PRIVÉ : seulement l'Enfant Sauvage voit son modèle
+          addChatLocal(`🏹 Vous choisissez <strong>${p1?.name}</strong> comme modèle. Si il meurt, vous devenez loup.`);
           addJournal("Enfant Sauvage : modèle = " + p1?.name);
         } else if (type === "joueurdeflute") {
           const targets = G.fluteTargets || [];
@@ -3653,10 +3649,8 @@ if (IS_HOST) {
             showNotif("Choisissez une cible !");
             return;
           }
-          addChat(
-            "🛡️ Vous protégez <strong>" + t.name + "</strong> cette nuit.",
-            true
-          );
+          // PRIVÉ : seulement le Salvateur voit qui il protège
+          addChatLocal("🛡️ Vous protégez <strong>" + t.name + "</strong> cette nuit.");
           addJournal("Salvateur : protège " + t.name);
         } else if (type === "cupid") {
           if (!t) {
@@ -3680,19 +3674,13 @@ if (IS_HOST) {
             const p1 = G.players.find((p) => p.id === G.loverA);
             // Sauvegarder les amoureux dans Firebase pour reconnexion
             update(ref(db, "salons/" + SID + "/gameState"), { lovers: G.lovers });
-            addChat(
-              "💘 <strong>" +
-                p1.name +
-                "</strong> et <strong>" +
-                t.name +
-                "</strong> sont liés par l'amour !",
-              true
-            );
+            // PRIVÉ : Cupidon seul voit qui il a lié (les amoureux apprendront à leur réveil)
+            addChatLocal("💘 Vous liez <strong>" + p1.name + "</strong> et <strong>" + t.name + "</strong> par l'amour !");
             addJournal("Cupidon : " + p1.name + " 💘 " + t.name);
             G.loverA = null;
           }
         } else if (type === "pass") {
-          addChat("Action passée.", true);
+          addChatLocal("⏭️ Vous passez votre tour.");
         }
         G.actDone = true;
         renderAction();
@@ -3806,7 +3794,7 @@ if (IS_HOST) {
             <div style="color:#555;font-size:0.85rem;font-style:italic">Vous ne pouvez plus agir. Observez la partie se dérouler…</div>
           </div>`;
         document.body.style.paddingBottom = "80px";
-        addChat("👻 <em>" + ME.name + " est mort(e) et chuchote depuis l'au-delà…</em>", true);
+        addChatLocal("👻 <em>Vous êtes mort(e) et chuchotez depuis l'au-delà…</em>");
         setTimeout(() => document.getElementById("dead-msg-inp")?.focus(), 300);
 
       }
@@ -3960,6 +3948,15 @@ if (IS_HOST) {
         }
       };
 
+      // Message privé — affiché uniquement dans le DOM local, jamais dans Firebase
+      function addChatLocal(msg) {
+        const d = document.createElement("div");
+        d.className = "msg sys";
+        d.innerHTML = msg;
+        const c = document.getElementById("game-chat");
+        if (c) { c.appendChild(d); c.scrollTop = c.scrollHeight; }
+      }
+
       function addChat(msg, sys, botAuthor) {
         const isBot = !!botAuthor;
         if (isBot && !(G.players && G.players.some(p => p.isBot))) return;
@@ -3986,27 +3983,40 @@ if (IS_HOST) {
         });
       }
 
+      let _lastMsgSent = 0;
+      let _sendingMsg = false;
       window.sendChat = function () {
         if (!G.chatOn) {
           showNotif("Chat indisponible maintenant !");
           return;
         }
+        if (_sendingMsg) return; // anti-doublon
         const inp = document.getElementById("msg-inp"),
           txt = inp.value.trim();
         if (!txt) return;
-        addChat(txt, false);
+        // Anti-spam : 500ms entre deux messages
+        const now = Date.now();
+        if (now - _lastMsgSent < 500) return;
+        _lastMsgSent = now;
+        _sendingMsg = true;
         inp.value = "";
         closeGameEmoji();
+        addChat(txt, false);
         if (typeof clearTimeout !== "undefined") clearTimeout(G._typTimer);
         const db2 = getDatabase();
         set(ref(db2, "gameTyping/" + SID + "/" + ME.id), null);
+        setTimeout(() => { _sendingMsg = false; }, 500);
       };
 
+      let _lastDeadMsgSent = 0;
       window.sendDeadChatMain = function () {
         const inp = document.getElementById("dead-msg-inp");
         if (!inp) return;
         const txt = inp.value.trim();
         if (!txt) return;
+        const now2 = Date.now();
+        if (now2 - _lastDeadMsgSent < 500) return;
+        _lastDeadMsgSent = now2;
         // 🔒 SÉCURITÉ : seuls les vrais morts (ou spectateurs) peuvent utiliser
         // ce canal. Un vivant ne peut pas y écrire même en appelant la fonction
         // depuis la console, car G.alive est synchronisé depuis Firebase.
@@ -4215,6 +4225,8 @@ if (IS_HOST) {
       }
 
       function scheduleBots() {
+        if (G._botsScheduled === G.turn) return; // déjà planifié ce tour
+        G._botsScheduled = G.turn;
         const botsAlive = G.players.filter((p) => p.isBot && G.alive[p.id]);
         botsAlive.forEach((bot, i) => {
           setTimeout(() => {
