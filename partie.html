@@ -761,7 +761,7 @@
         loverA: null,
         seqIdx: 0,
         activeSeq: [],
-        ivals: { main: null, vote: null, action: null },
+        ivals: { main: null, vote: null, action: null, voteOverlay: null },
         chatCount: 0,
         _lastNightStepKey: null,
         voteListener: null,
@@ -1160,12 +1160,13 @@ if (IS_HOST) {
               if (IS_HOST) addChat("⏰ <em>Personne n'a voté — la nuit tombe sans élimination.</em>", true);
               const _vc0 = document.getElementById("vote-cbar");
               if (_vc0) _vc0.style.display = "none";
+              const _mc0 = document.getElementById("main-cbar");
+              if (_mc0) _mc0.style.display = "none";
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               G.voteStarted = false;
               G.voteListening = false;
               goTab("village", null);
               if (IS_HOST) setTimeout(() => { if (!G.gameEnded) runNight(); }, 800);
-              // Les non-hôtes attendent phase:"night" via Firebase
               return;
             }
 
@@ -1176,10 +1177,12 @@ if (IS_HOST) {
 
             const _vc = document.getElementById("vote-cbar");
             if (_vc) _vc.style.display = "none";
+            // Cacher aussi le timer dans main-cbar
+            const _mcVR = document.getElementById("main-cbar");
+            if (_mcVR) _mcVR.style.display = "none";
             if (G.voteListener) { G.voteListener(); G.voteListener = null; }
             G.voteStarted = false;
             G.voteListening = false;
-            // FIX : fermer la page vote immédiatement pour tous
             goTab("village", null);
 
             showVoteResult(vr.tally || {}, t, vr.maxVotes || 0, () => {
@@ -1237,7 +1240,6 @@ if (IS_HOST) {
           }
 
           if (gs.voteOpen && !IS_HOST) {
-            // FIX timer vote : démarrer dès qu'on a voteOpen ET phaseStart
             if (!G.voteStarted && gs.phaseStart && gs.phaseDuration) {
               G.voteStarted = true;
               G.voteListening = true;
@@ -1246,22 +1248,35 @@ if (IS_HOST) {
               showVoteBadge();
               renderVoteList();
               goTab("vote", document.getElementById("tbtn-vote"));
+              // FIX : afficher le timer dans main-cbar (toujours visible)
+              const _mcNH = document.getElementById("main-cbar");
+              const _clNH = document.getElementById("cbar-label");
+              const _cfNH = document.getElementById("cbar-fill");
+              if (_mcNH) _mcNH.style.display = "block";
+              if (_clNH) _clNH.textContent = "🗳️ Vote en cours !";
+              if (_cfNH) { _cfNH.style.background = "#be6d6d"; _cfNH.style.width = "100%"; }
               const vcbar = document.getElementById("vote-cbar");
               if (vcbar) vcbar.style.display = "block";
               const vdesc = document.getElementById("vote-desc");
               if (vdesc) vdesc.textContent = "Choisissez le joueur à éliminer :";
-              const fill = document.getElementById("vote-fill");
-              if (fill) { fill.style.background = "#be6d6d"; fill.style.width = "100%"; }
+              const vfill = document.getElementById("vote-fill");
+              if (vfill) { vfill.style.background = "#be6d6d"; vfill.style.width = "100%"; }
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
                 (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
               );
               clearInterval(G.ivals.vote);
-              G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {
-                const vc2 = document.getElementById("vote-cbar");
-                if (vc2) vc2.style.display = "none";
+              // Timer dans main-cbar (principal, toujours visible)
+              G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "cbar-fill", "cbar-time", () => {
+                const _mc4 = document.getElementById("main-cbar");
+                if (_mc4) _mc4.style.display = "none";
+                const _vc3 = document.getElementById("vote-cbar");
+                if (_vc3) _vc3.style.display = "none";
                 if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               });
+              // Sync aussi dans vote-fill pour l'overlay
+              clearInterval(G.ivals.voteOverlay);
+              G.ivals.voteOverlay = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {});
             }
           }
 
@@ -1406,6 +1421,7 @@ if (IS_HOST) {
       };
       function clearIvals() {
         Object.values(G.ivals).forEach((v) => clearInterval(v));
+        G.ivals = { main: null, vote: null, action: null, voteOverlay: null };
       }
 
       function showReveal() {
@@ -1917,6 +1933,13 @@ if (IS_HOST) {
         });
         currentMusic = null;
       }
+      // Pause sans reset (pour reprendre au même endroit quand on remet le son)
+      function pauseAllMusic() {
+        if (!_soundsLoaded) return;
+        ["night","day","cock"].forEach(function(k){
+          if (SOUNDS[k] && !SOUNDS[k].paused) { try { SOUNDS[k].pause(); } catch(e){} }
+        });
+      }
 
       function startNightMusic() {
         if (musicMuted) return;
@@ -2052,10 +2075,29 @@ if (IS_HOST) {
           musicMuted = !musicMuted;
           btn.innerHTML = musicMuted ? "🔇" : "🔊";
           if (musicMuted) {
-            stopAllMusic();
+            // Mettre en pause sans remettre à zéro (pour reprendre au même endroit)
+            if (!_soundsLoaded) return;
+            ["night","day","cock"].forEach(function(k){
+              if (SOUNDS[k] && !SOUNDS[k].paused) SOUNDS[k].pause();
+            });
           } else {
-            if (G.phase === "night") { SOUNDS.night.play().catch(()=>{}); currentMusic = "night"; }
-            else if (G.phase === "day") { SOUNDS.day.play().catch(()=>{}); currentMusic = "day"; }
+            // Reprendre depuis là où on en était
+            _loadSoundsJs(function() {
+              _initSoundVolumes();
+              if (typeof getAC === 'function') { try { getAC(); } catch(e){} }
+              if (G.phase === "night" && SOUNDS.night) {
+                SOUNDS.night.play().catch(function(){});
+                currentMusic = "night";
+              } else if ((G.phase === "day" || G.phase === "vote") && SOUNDS.day) {
+                // Si le coq était en cours, reprendre la musique du jour directement
+                if (!SOUNDS.day.paused || currentMusic === "day") {
+                  SOUNDS.day.play().catch(function(){});
+                  currentMusic = "day";
+                } else {
+                  startDayMusic();
+                }
+              }
+            });
           }
         };
         document.body.appendChild(btn);
@@ -2672,15 +2714,18 @@ if (IS_HOST) {
           "🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?",
           true
         );
+        // FIX timer vote : afficher dans main-cbar (toujours visible) en rouge
+        const _mcV = document.getElementById("main-cbar");
+        const _clV = document.getElementById("cbar-label");
+        const _cfV = document.getElementById("cbar-fill");
+        if (_mcV) _mcV.style.display = "block";
+        if (_clV) _clV.textContent = "🗳️ Vote — " + _voteDur + "s !";
+        if (_cfV) { _cfV.style.background = "#be6d6d"; _cfV.style.width = "100%"; }
         soundVoteStart();
         showVoteBadge();
         if (G.allowBots) scheduleBotsVote();
-        showGameNotif(
-          "🗳️",
-          "C'est l'heure du vote ! Choisissez qui éliminer.",
-          6000
-        );
-        setPhaseInfo("🗳️ Vote — 1 minute !");
+        showGameNotif("🗳️", "C'est l'heure du vote ! Choisissez qui éliminer.", 6000);
+        setPhaseInfo("🗳️ Vote en cours !");
         G.selVote = null;
         G.votes = {};
         G.isRunoff = false;
@@ -2711,17 +2756,29 @@ if (IS_HOST) {
           });
         }
         clearInterval(G.ivals.vote);
+        // Timer dans vote-cbar (overlay) ET dans cbar-fill/cbar-time (main-cbar)
         G.ivals.vote = startTimerFromTs(
           _voteStartTs,
           _voteDur,
-          "vote-fill",
-          "vote-time",
+          "cbar-fill",   // utiliser la barre principale toujours visible
+          "cbar-time",
           () => {
+            const _mc3 = document.getElementById("main-cbar");
+            if (_mc3) _mc3.style.display = "none";
             const _vc2 = document.getElementById("vote-cbar");
             if (_vc2) _vc2.style.display = "none";
             if (G.voteListener) { G.voteListener(); G.voteListener = null; }
             if (IS_HOST) resolveVotes();
           }
+        );
+        // Synchroniser aussi vote-fill avec le même timer pour l'overlay
+        clearInterval(G.ivals.voteOverlay);
+        G.ivals.voteOverlay = startTimerFromTs(
+          _voteStartTs,
+          _voteDur,
+          "vote-fill",
+          "vote-time",
+          () => {}
         );
       }
 
