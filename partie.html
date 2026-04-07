@@ -1537,24 +1537,33 @@ if (IS_HOST) {
         // Si un non-hôte arrive 2s plus tard → il voit 13 au lieu de 15, normal.
         // Pas de délai artificiel qui bloque l'affichage.
 
+        // tsRef = moment exact où TOUT LE MONDE doit afficher "15" et démarrer
+        // On ajoute 2s pour laisser le temps à Firebase de propager le timestamp
+        const START_IN_MS = 2000;
+
+        function _scheduleStart(tsRef) {
+          // tsRef est dans le futur → attendre exactement ce moment
+          const waitMs = Math.max(0, tsRef - Date.now());
+          if (cdEl) cdEl.textContent = REVEAL_DURATION; // afficher 15 tout de suite
+          setTimeout(() => _startCountdown(tsRef), waitMs);
+        }
+
         if (IS_HOST) {
-          const tsRef = Date.now();
+          const tsRef = Date.now() + START_IN_MS;
           update(ref(db, "salons/" + SID + "/gameState"), { gameStartTs: tsRef, status: "playing" });
-          _startCountdown(tsRef);
+          _scheduleStart(tsRef);
         } else {
-          // Non-hôte : utiliser le timestamp déjà capturé avant init() si dispo
+          function _onTs(tsRef) { _scheduleStart(tsRef); }
           if (G._pendingStartTs) {
-            _startCountdown(G._pendingStartTs);
+            _onTs(G._pendingStartTs);
           } else {
-            // Pas encore reçu → écouter Firebase en temps réel
             const _gsRef = ref(db, "salons/" + SID + "/gameState/gameStartTs");
             const _unsubTs = onValue(_gsRef, (snap) => {
               if (!snap.exists()) return;
               _unsubTs();
               G._pendingStartTs = snap.val();
-              _startCountdown(G._pendingStartTs);
+              _onTs(G._pendingStartTs);
             });
-            // Sécurité 20s
             setTimeout(() => { if (!_cdStarted) { _unsubTs(); startFirstNight(); } }, 20000);
           }
         }
