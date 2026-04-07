@@ -1258,11 +1258,13 @@ if (IS_HOST) {
             }
           }
 
-          if (gs.voteOpen && !IS_HOST && !G.voteStarted) {
-            // Non-hôte : ouvrir l'UI de vote directement
+          // NOUVEAU SYSTÈME : les non-hôtes détectent le vote via voteCountdown
+          // voteCountdown est écrit par l'hôte chaque seconde dès le début du vote
+          if (gs.voteOpen && !IS_HOST && !G.voteStarted && gs.voteCountdown > 0) {
             G.voteStarted = true;
-            const _vd = gs.voteCountdown || 15;
-            _openVoteUI(_vd);
+            G.isRunoff = false;
+            G.runoffCandidates = null;
+            _openVoteUI(15);
           }
 
           if (gs.victimForWitch && G.myRole === "witch" && !G.victim) {
@@ -1314,9 +1316,50 @@ if (IS_HOST) {
               window._showNightTimer(gs.nightStepLabel, gs.nightStepStart, gs.nightStepDuration, img);
             }
 
-            // Carte d'annonce pour les NON-HÔTES seulement
-            if (!IS_HOST && seq) {
-              showNightTransition(gs.nightStepLabel + " se réveille…", seq.d || "", null, img);
+            // Pour les NON-HÔTES : carte + action si c'est leur tour
+            if (!IS_HOST) {
+              const isMyStep = gs.nightStepRole === G.myRole;
+              const isLG = G.myRole === "littlegirl" && gs.nightStepRole === "wolf";
+
+              if (seq) {
+                showNightTransition(gs.nightStepLabel + " se réveille…", seq.d || "", () => {
+                  if (isMyStep) {
+                    // C'est notre rôle → ouvrir le panneau action
+                    if (G.myRole === "witch") playSound("witch");
+                    else if (G.myRole === "littlegirl") playSound("littlegirl");
+                    else soundYourTurn();
+                    showGameNotif("🔔", "C'est votre tour d'agir !", 3000);
+                    G.forceAction = true;
+                    G.actDone = false;
+                    G._curStepStart = gs.nightStepStart;
+                    renderAction();
+                    if (G.myRole !== "wolf") {
+                      goTab("action", document.getElementById("tbtn-action"));
+                    } else {
+                      G.forceAction = false;
+                      renderAction();
+                      showGameNotif("🐺", "Chatte avec tes complices puis clique 🐺 Voter !", 5000);
+                      const voteBtn = document.getElementById("wolf-vote-btn");
+                      if (voteBtn) voteBtn.style.display = "block";
+                      const attackBtn = document.getElementById("wolf-attack-btn");
+                      if (attackBtn) attackBtn.style.display = "flex";
+                    }
+                    showActionBar(gs.nightStepDuration);
+                  } else if (isLG) {
+                    // Petite fille espionne
+                    document.getElementById("wolf-private").style.display = "block";
+                    document.getElementById("wolf-private-label").style.display = "none";
+                    document.getElementById("littlegirl-spy-label").style.display = "inline";
+                  }
+                }, img);
+              } else if (isMyStep) {
+                // Pas de seq trouvé mais c'est mon tour quand même
+                G.actDone = false;
+                G._curStepStart = gs.nightStepStart;
+                renderAction();
+                goTab("action", document.getElementById("tbtn-action"));
+                showActionBar(gs.nightStepDuration);
+              }
             }
           } else {
             if (_timerLastKey !== "waiting") {
@@ -2355,33 +2398,33 @@ if (IS_HOST) {
           timeEl = document.getElementById("action-time");
         fill.style.width = "100%";
         fill.style.background = "#9999ff";
-        let rem = secs;
-        const tot = secs;
-        function upd() {
-          const m = Math.floor(rem / 60),
-            s = rem % 60;
+
+        function _renderAction(rem) {
+          const m = Math.floor(rem / 60), s = rem % 60;
           timeEl.textContent = m + ":" + (s < 10 ? "0" : "") + s;
-          fill.style.width = Math.round((rem / tot) * 100) + "%";
+          fill.style.width = Math.round((rem / secs) * 100) + "%";
           if (rem <= 8) fill.style.background = "#be6d6d";
         }
-        upd();
-        const actionStart = G._curStepStart || Date.now();
-        G.ivals.action = startTimerFromTs(
-          actionStart,
-          secs,
-          "action-fill",
-          "action-time",
-          () => {
+        _renderAction(secs);
+
+        // Écouter nightStepCountdown (écrit par l'hôte chaque seconde)
+        let _actUnsub = null;
+        _actUnsub = onValue(ref(db, "salons/" + SID + "/gameState/nightStepCountdown"), (snap) => {
+          if (!snap.exists()) return;
+          const rem = snap.val();
+          _renderAction(Math.max(0, rem));
+          if (rem <= 0) {
+            if (_actUnsub) { _actUnsub(); _actUnsub = null; }
             document.getElementById("action-cbar").style.display = "none";
             if (!G.actDone) {
-              // PRIVÉ : seulement le joueur concerné voit ce message
               addChatLocal("⏰ Temps écoulé — action ignorée.");
               G.actDone = true;
             }
-            document.getElementById("wolf-attack-btn") && (document.getElementById("wolf-attack-btn").style.display = "none");
-            advNight();
+            const _wab = document.getElementById("wolf-attack-btn");
+            if (_wab) _wab.style.display = "none";
+            if (IS_HOST) advNight();
           }
-        );
+        });
       }
 
       function advNight() {
@@ -3991,21 +4034,28 @@ if (IS_HOST) {
         if (c) { c.appendChild(d); c.scrollTop = c.scrollHeight; }
       }
 
+      // Déduplication : évite messages en double avec plusieurs joueurs humains
+      const _sentMsgKeys = new Set();
+
       function addChat(msg, sys, botAuthor) {
+        // Messages système et bots : SEULEMENT l'hôte écrit dans Firebase
+        if (sys && !IS_HOST) return;
         const isBot = !!botAuthor;
+        if (isBot && !IS_HOST) return;
         if (isBot && !(G.players && G.players.some(p => p.isBot))) return;
+
         const isWolfRole = !sys && !isBot && G.phase === "night" &&
           (G.myRole === "wolf" || G.myRole === "whitewolf" || G.myRole === "grandmechant");
         if (!sys && !isBot && !G.alive[ME.id]) return;
-        const chatRef = ref(
-          db,
-          "salons/" +
-            SID +
-            "/gameChat/" +
-            Date.now() +
-            "_" +
-            Math.random().toString(36).slice(2, 5)
-        );
+
+        const t = Date.now();
+        // Clé de dédup : même auteur + même contenu dans fenêtre de 2s = doublon
+        const dedupKey = (botAuthor || ME.id) + "_" + Math.round(t / 2000) + "_" + msg.slice(0, 40);
+        if (_sentMsgKeys.has(dedupKey)) return;
+        _sentMsgKeys.add(dedupKey);
+        setTimeout(() => _sentMsgKeys.delete(dedupKey), 5000);
+
+        const chatRef = ref(db, "salons/" + SID + "/gameChat/" + t + "_" + Math.random().toString(36).slice(2, 5));
         set(chatRef, {
           text: msg,
           sys: sys || false,
@@ -4013,7 +4063,7 @@ if (IS_HOST) {
           uid: isBot ? ("bot_" + botAuthor) : ME.id,
           author: isBot ? botAuthor : ME.name,
           isBot: isBot || false,
-          t: Date.now(),
+          t: t,
         });
       }
 
