@@ -1496,84 +1496,50 @@ if (IS_HOST) {
         }
 
         // ── Compte à rebours 100% synchronisé via Firebase ──────────────────
-        // TOUS les joueurs (hôte ET non-hôtes) lisent le même gameStartTs via
-        // onValue → démarrage identique au même milliseconde pour tout le monde.
-        const REVEAL_DURATION = 15;
         const cdEl = document.getElementById("reveal-countdown");
-        let _cdStarted = false;
 
-        // Lance le décompte 15→0 à partir d'un timestamp de référence
-        // tsRef = moment où tout le monde doit afficher "15"
-        function _startCountdown(tsRef) {
-          if (_cdStarted) return;
-          _cdStarted = true;
+        // ── TECHNIQUE FINALE : l'hôte pousse le chiffre dans Firebase chaque seconde ──
+        // Les non-hôtes écoutent via onValue et affichent exactement ce chiffre.
+        // Aucun calcul de temps, aucun timestamp, synchronisation parfaite garantie.
 
-          function _getRem() {
-            const elapsed = Math.floor((Date.now() - tsRef) / 1000);
-            // Plafonner à REVEAL_DURATION (quand tsRef est dans le futur, elapsed < 0)
-            return Math.max(0, Math.min(REVEAL_DURATION, REVEAL_DURATION - elapsed));
-          }
-
-          // Si déjà expiré → démarrer la nuit directement
-          if (Date.now() - tsRef > REVEAL_DURATION * 1000) { startFirstNight(); return; }
-
-          // Affichage immédiat
-          const _update = () => {
-            const rem = _getRem();
-            if (cdEl) {
-              cdEl.textContent = rem;
-              cdEl.style.borderColor = rem <= 5 ? "#be6d6d" : "var(--accent)";
-              cdEl.style.color       = rem <= 5 ? "#be6d6d" : "var(--accent)";
-              cdEl.style.transform   = rem <= 5 ? "scale(1.1)" : "scale(1)";
-            }
-            return rem;
-          };
-
-          _update();
-
-          const _iv = setInterval(() => {
-            const rem = _update();
-            if (rem <= 0) { clearInterval(_iv); startFirstNight(); }
-          }, 300);
+        function _showCount(n) {
+          if (!cdEl) return;
+          cdEl.textContent = n;
+          cdEl.style.borderColor = n <= 5 ? "#be6d6d" : "var(--accent)";
+          cdEl.style.color       = n <= 5 ? "#be6d6d" : "var(--accent)";
+          cdEl.style.transform   = n <= 5 ? "scale(1.1)" : "scale(1)";
         }
 
-        // ── Synchronisation simple et directe ───────────────────────────────
-        // L'hôte écrit gameStartTs = maintenant, démarre son chrono immédiatement.
-        // Les non-hôtes reçoivent gameStartTs via Firebase et démarrent aussi.
-        // Si un non-hôte arrive 2s plus tard → il voit 13 au lieu de 15, normal.
-        // Pas de délai artificiel qui bloque l'affichage.
-
-        // ── Synchronisation garantie ─────────────────────────────────────────
-        // L'hôte écrit gameStartTs = maintenant + 3s dans Firebase.
-        // TOUS les joueurs (hôte inclus) démarrent _startCountdown() dès réception,
-        // sans aucun setTimeout supplémentaire.
-        // _startCountdown calcule le temps restant en temps réel depuis tsRef :
-        //   - si tsRef est dans le futur : affiche 15, 15, 15... puis décrémente
-        //   - si tsRef est dans le passé  : affiche le bon chiffre immédiatement
-        // Tout le monde voit donc 15 en même temps.
-
-        const START_IN_MS = 3000; // marge pour que Firebase propage
-
         if (IS_HOST) {
-          const tsRef = Date.now() + START_IN_MS;
-          update(ref(db, "salons/" + SID + "/gameState"), { gameStartTs: tsRef, status: "playing" });
-          _startCountdown(tsRef); // démarre immédiatement, affichera 15 jusqu'à tsRef
+          let _n = 15;
+          _showCount(_n);
+          // Écrire le chiffre initial + status dans Firebase
+          update(ref(db, "salons/" + SID + "/gameState"), {
+            status: "playing",
+            revealCountdown: _n
+          });
+          // Décrémenter chaque seconde et écrire dans Firebase
+          const _iv = setInterval(() => {
+            _n--;
+            update(ref(db, "salons/" + SID + "/gameState"), { revealCountdown: _n });
+            _showCount(_n);
+            if (_n <= 0) { clearInterval(_iv); startFirstNight(); }
+          }, 1000);
         } else {
-          function _onTs(tsRef) {
-            _startCountdown(tsRef); // pareil : démarre immédiatement
-          }
-          if (G._pendingStartTs) {
-            _onTs(G._pendingStartTs);
-          } else {
-            const _gsRef = ref(db, "salons/" + SID + "/gameState/gameStartTs");
-            const _unsubTs = onValue(_gsRef, (snap) => {
-              if (!snap.exists()) return;
-              _unsubTs();
-              G._pendingStartTs = snap.val();
-              _onTs(G._pendingStartTs);
-            });
-            setTimeout(() => { if (!_cdStarted) { _unsubTs(); startFirstNight(); } }, 20000);
-          }
+          // Non-hôte : afficher 15 immédiatement, puis écouter Firebase
+          _showCount(15);
+          const _cdRef = ref(db, "salons/" + SID + "/gameState/revealCountdown");
+          const _unsubCd = onValue(_cdRef, (snap) => {
+            if (!snap.exists()) return;
+            const n = snap.val();
+            _showCount(n);
+            if (n <= 0) {
+              _unsubCd();
+              startFirstNight();
+            }
+          });
+          // Sécurité 30s
+          setTimeout(() => { _unsubCd(); if (!G._firstNightStarted) startFirstNight(); }, 30000);
         }
       }
 
@@ -4829,14 +4795,8 @@ if (IS_HOST) {
         function _launchInit() {
           if (_initLaunched) return;
           _initLaunched = true;
-          // Commencer à écouter gameStartTs IMMÉDIATEMENT, avant init()
-          // pour ne pas perdre de temps pendant les await Firebase de init()
-          const _earlyTsRef = ref(db, "salons/" + SID + "/gameState/gameStartTs");
-          const _earlyUnsub = onValue(_earlyTsRef, (snap) => {
-            if (!snap.exists()) return;
-            _earlyUnsub();
-            G._pendingStartTs = snap.val(); // stocker pour showReveal()
-          });
+          // Le compte à rebours est maintenant géré via revealCountdown dans Firebase
+          // (l'hôte écrit le chiffre chaque seconde, les non-hôtes lisent via onValue)
           init();
           setTimeout(() => {
             const r = RDATA[G.myRole] || RDATA.villager;
