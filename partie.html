@@ -1531,35 +1531,28 @@ if (IS_HOST) {
           }, 300);
         }
 
-        // ── Synchronisation : l'hôte écrit gameStartTs = dans 5s ─────────────
-        // Tous les joueurs démarrent leur chrono depuis ce même timestamp futur.
-        // À T+5s tout le monde affiche 15 et décrémente ensemble.
-        const SYNC_DELAY = 5000;
+        // ── Synchronisation simple et directe ───────────────────────────────
+        // L'hôte écrit gameStartTs = maintenant, démarre son chrono immédiatement.
+        // Les non-hôtes reçoivent gameStartTs via Firebase et démarrent aussi.
+        // Si un non-hôte arrive 2s plus tard → il voit 13 au lieu de 15, normal.
+        // Pas de délai artificiel qui bloque l'affichage.
 
         if (IS_HOST) {
-          // L'hôte fixe le point de départ dans le futur
-          const tsRef = Date.now() + SYNC_DELAY;
+          const tsRef = Date.now();
           update(ref(db, "salons/" + SID + "/gameState"), { gameStartTs: tsRef, status: "playing" });
-          // L'hôte attend que tsRef arrive pour démarrer son chrono
-          const waitHost = Math.max(0, tsRef - Date.now());
-          setTimeout(() => _startCountdown(tsRef), waitHost);
+          _startCountdown(tsRef);
         } else {
-          // Non-hôte : utiliser le timestamp capturé en avance dans _launchInit
-          function _onTsReady(tsRef) {
-            // Attendre que tsRef arrive (peut être dans le futur)
-            const waitMs = Math.max(0, tsRef - Date.now());
-            setTimeout(() => _startCountdown(tsRef), waitMs);
-          }
+          // Non-hôte : utiliser le timestamp déjà capturé avant init() si dispo
           if (G._pendingStartTs) {
-            _onTsReady(G._pendingStartTs);
+            _startCountdown(G._pendingStartTs);
           } else {
-            // Pas encore reçu → écouter Firebase
+            // Pas encore reçu → écouter Firebase en temps réel
             const _gsRef = ref(db, "salons/" + SID + "/gameState/gameStartTs");
             const _unsubTs = onValue(_gsRef, (snap) => {
               if (!snap.exists()) return;
               _unsubTs();
               G._pendingStartTs = snap.val();
-              _onTsReady(G._pendingStartTs);
+              _startCountdown(G._pendingStartTs);
             });
             // Sécurité 20s
             setTimeout(() => { if (!_cdStarted) { _unsubTs(); startFirstNight(); } }, 20000);
