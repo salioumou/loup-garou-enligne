@@ -883,11 +883,20 @@
               document.getElementById("night-panel").style.display = "none";
               document.getElementById("main-cbar").style.display = "block";
               document.getElementById("cbar-label").textContent = "☀️ Discussion";
-              if (gs.phaseStart && gs.phaseDuration) {
-                clearInterval(G.ivals.main);
-                G.ivals.main = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "cbar-fill", "cbar-time",
-                  () => { document.getElementById("main-cbar").style.display = "none"; if (!G.voteStarted) startVote(); }
-                );
+              // Reconnexion : écouter dayCountdown Firebase
+              if (!G._dayCountdownUnsub) {
+                let _dcU = null;
+                _dcU = onValue(ref(db, "salons/" + SID + "/gameState/dayCountdown"), (snap) => {
+                  if (!snap.exists()) return;
+                  const r = snap.val();
+                  const m2=Math.floor(r/60), s2=r%60;
+                  const _dct = document.getElementById("cbar-time");
+                  const _dcf = document.getElementById("cbar-fill");
+                  if (_dct) _dct.textContent = m2+":"+(s2<10?"0":"")+s2;
+                  if (_dcf) { _dcf.style.width = Math.round((r/(gs.phaseDuration||180))*100)+"%"; _dcf.style.background="var(--accent)"; }
+                  if (r <= 0) { if (_dcU) _dcU(); }
+                });
+                G._dayCountdownUnsub = _dcU;
               }
             } else if (gs.phase === "vote" || gs.voteOpen) {
               // Vote en cours - reconnecter le listener de votes
@@ -910,8 +919,20 @@
                     renderVoteList();
                     renderVoteSummary();
                   });
-                  if (gs.phaseStart && gs.phaseDuration) {
-                    G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {});
+                  // Reconnexion vote : écouter voteCountdown Firebase
+                  {
+                    let _vcR = null;
+                    _vcR = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
+                      if (!snap.exists()) return;
+                      const r = snap.val();
+                      const m2=Math.floor(r/60), s2=r%60;
+                      const ts = m2+":"+(s2<10?"0":"")+s2;
+                      const _vt=document.getElementById("vote-time"); if(_vt) _vt.textContent=ts;
+                      const _ct=document.getElementById("cbar-time"); if(_ct) _ct.textContent=ts;
+                      const _vf=document.getElementById("vote-fill"); if(_vf) _vf.style.width=Math.round(r/15*100)+"%";
+                      const _cf=document.getElementById("cbar-fill"); if(_cf) _cf.style.width=Math.round(r/15*100)+"%";
+                      if (r<=0) { if(_vcR) _vcR(); }
+                    });
                   }
                 }
               }
@@ -935,7 +956,7 @@
               // Trouver l'index de l'étape en cours
               const curIdx = G.activeSeq.findIndex(s => s.r === gs.nightStepRole);
               if (curIdx !== -1) G.seqIdx = curIdx;
-              addChat("🔄 <em>L'hôte s'est reconnecté — reprise de la partie.</em>", true);
+              if (IS_HOST) addChat("🔄 <em>L'hôte s'est reconnecté — reprise de la partie.</em>", true);
             }
           }
         }
@@ -1248,12 +1269,23 @@ if (IS_HOST) {
             goTab("vote", document.getElementById("tbtn-vote"));
             document.getElementById("vote-cbar").style.display = "block";
             document.getElementById("vote-desc").textContent = "⚖️ Second tour — choisissez parmi les ex-æquo :";
-            if (gs.phaseStart && gs.phaseDuration) {
-              clearInterval(G.ivals.vote);
-              G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {
-                document.getElementById("vote-cbar").style.display = "none";
-                if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-                if (IS_HOST) resolveVotes();
+            // Second tour : écouter voteCountdown Firebase
+            {
+              let _vcR2 = null;
+              _vcR2 = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
+                if (!snap.exists()) return;
+                const r = snap.val();
+                const m2=Math.floor(r/60), s2=r%60;
+                const ts = m2+":"+(s2<10?"0":"")+s2;
+                const _vt=document.getElementById("vote-time"); if(_vt) _vt.textContent=ts;
+                const _cf=document.getElementById("cbar-fill"); if(_cf) _cf.style.width=Math.round(r/15*100)+"%";
+                const _vf=document.getElementById("vote-fill"); if(_vf) _vf.style.width=Math.round(r/15*100)+"%";
+                if (r <= 0) {
+                  if (_vcR2) _vcR2();
+                  const _vc=document.getElementById("vote-cbar"); if(_vc) _vc.style.display="none";
+                  if (G.voteListener) { G.voteListener(); G.voteListener=null; }
+                  if (IS_HOST) resolveVotes();
+                }
               });
             }
           }
@@ -1263,14 +1295,15 @@ if (IS_HOST) {
             G.voteStarted = true;
             G.isRunoff = false;
             G.runoffCandidates = null;
-            // Synchroniser alive depuis Firebase avant d'ouvrir le panneau
+            // Synchroniser alive + players depuis le snapshot gameState
             if (gs.alive) {
               Object.keys(gs.alive).forEach(k => {
                 G.alive[k] = gs.alive[k];
-                const dotKey = k.replace(/_/g, ".");
-                if (dotKey !== k) G.alive[dotKey] = gs.alive[k];
+                const dk = k.replace(/_/g,".");
+                if (dk !== k) G.alive[dk] = gs.alive[k];
               });
             }
+            if (gs.players) G.players = gs.players;
             const _vDur = gs.voteCountdown || 15;
             _openVoteUI(_vDur);
           }
@@ -1329,44 +1362,50 @@ if (IS_HOST) {
               const isMyStep = gs.nightStepRole === G.myRole;
               const isLG = G.myRole === "littlegirl" && gs.nightStepRole === "wolf";
 
+              // Toujours synchroniser alive + players depuis le snapshot Firebase
+              if (gs.alive) {
+                Object.keys(gs.alive).forEach(k => {
+                  G.alive[k] = gs.alive[k];
+                  const dk = k.replace(/_/g,".");
+                  if (dk !== k) G.alive[dk] = gs.alive[k];
+                });
+              }
+
+              function _openActionForMe() {
+                G.forceAction = true;
+                G.actDone = false;
+                G.actTgt = null;
+                G._curStepStart = gs.nightStepStart;
+                if (G.myRole === "witch") playSound("witch");
+                else if (G.myRole === "littlegirl") playSound("littlegirl");
+                else soundYourTurn();
+                showGameNotif("🔔", "C'est votre tour d'agir !", 4000);
+                if (G.myRole === "wolf") {
+                  G.forceAction = false;
+                  showGameNotif("🐺", "Chatte avec tes complices puis clique 🐺 Voter !", 5000);
+                  const voteBtn = document.getElementById("wolf-vote-btn");
+                  if (voteBtn) voteBtn.style.display = "block";
+                  const attackBtn = document.getElementById("wolf-attack-btn");
+                  if (attackBtn) attackBtn.style.display = "flex";
+                } else {
+                  goTab("action", document.getElementById("tbtn-action"));
+                }
+                renderAction();
+                showActionBar(gs.nightStepDuration);
+              }
+
               if (seq) {
                 showNightTransition(gs.nightStepLabel + " se réveille…", seq.d || "", () => {
                   if (isMyStep) {
-                    // C'est notre rôle → ouvrir le panneau action
-                    if (G.myRole === "witch") playSound("witch");
-                    else if (G.myRole === "littlegirl") playSound("littlegirl");
-                    else soundYourTurn();
-                    showGameNotif("🔔", "C'est votre tour d'agir !", 3000);
-                    G.forceAction = true;
-                    G.actDone = false;
-                    G._curStepStart = gs.nightStepStart;
-                    renderAction();
-                    if (G.myRole !== "wolf") {
-                      goTab("action", document.getElementById("tbtn-action"));
-                    } else {
-                      G.forceAction = false;
-                      renderAction();
-                      showGameNotif("🐺", "Chatte avec tes complices puis clique 🐺 Voter !", 5000);
-                      const voteBtn = document.getElementById("wolf-vote-btn");
-                      if (voteBtn) voteBtn.style.display = "block";
-                      const attackBtn = document.getElementById("wolf-attack-btn");
-                      if (attackBtn) attackBtn.style.display = "flex";
-                    }
-                    showActionBar(gs.nightStepDuration);
+                    _openActionForMe();
                   } else if (isLG) {
-                    // Petite fille espionne
                     document.getElementById("wolf-private").style.display = "block";
                     document.getElementById("wolf-private-label").style.display = "none";
                     document.getElementById("littlegirl-spy-label").style.display = "inline";
                   }
                 }, img);
               } else if (isMyStep) {
-                // Pas de seq trouvé mais c'est mon tour quand même
-                G.actDone = false;
-                G._curStepStart = gs.nightStepStart;
-                renderAction();
-                goTab("action", document.getElementById("tbtn-action"));
-                showActionBar(gs.nightStepDuration);
+                _openActionForMe();
               }
             }
           } else {
@@ -2314,12 +2353,17 @@ if (IS_HOST) {
         updateChat();
         const stepStart = Date.now();
         G._curStepStart = stepStart;
+        // Inclure alive + players pour que les non-hôtes aient tout en sync
+        const _stepAlive = {};
+        Object.keys(G.alive).forEach(k => { _stepAlive[k.replace(/[.]/g,"_")] = G.alive[k]; });
         update(ref(db, "salons/" + SID + "/gameState"), {
           nightStepRole: cur.r,
           nightStepLabel: cur.l,
           nightStepDuration: cur.s,
           nightStepStart: stepStart,
           nightStartTs: G._currentNightTs || stepStart,
+          alive: _stepAlive,
+          players: G.players,
         });
         if (window._showNightTimer) {
           window._showNightTimer(cur.l, stepStart, cur.s, cur.img);
@@ -2752,21 +2796,8 @@ if (IS_HOST) {
         lockVoteBtn(false);
         showVoteBadge();
         setPhaseInfo("🗳️ Vote en cours !");
-        // Synchroniser G.alive depuis Firebase avant d'afficher la liste
-        get(ref(db, "salons/" + SID + "/gameState/alive")).then(snap => {
-          if (snap.exists()) {
-            const aliveData = snap.val();
-            Object.keys(aliveData).forEach(k => {
-              G.alive[k] = aliveData[k];
-              const dotKey = k.replace(/_/g, ".");
-              if (dotKey !== k) G.alive[dotKey] = aliveData[k];
-            });
-          }
-          renderVoteList();
-          renderVoteSummary();
-        }).catch(() => {
-          renderVoteList();
-        });
+        renderVoteList();
+        renderVoteSummary();
 
         // main-cbar en rouge
         const mc = document.getElementById("main-cbar");
@@ -2847,12 +2878,16 @@ if (IS_HOST) {
         if (IS_HOST) {
           addChat("🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?", true);
           set(ref(db, "salons/" + SID + "/votes"), {});
+          // Écrire alive + players pour que les non-hôtes aient tout en sync
+          const _voteAlive = {};
+          Object.keys(G.alive).forEach(k => { _voteAlive[k.replace(/[.]/g,"_")] = G.alive[k]; });
           update(ref(db, "salons/" + SID + "/gameState"), {
             phase: "vote",
             voteOpen: true,
             voteResult: null,
             voteCountdown: VOTE_DUR,
-            alive: Object.assign({}, G.alive),
+            alive: _voteAlive,
+            players: G.players,
             turn: G.turn,
           });
           if (G.allowBots) scheduleBotsVote();
@@ -2894,13 +2929,10 @@ if (IS_HOST) {
               (votesForP / Math.max(1, totalVoters)) * 100
             );
             const iSelected = myVote === p.id;
-            // alive peut être undefined si Firebase pas encore sync — traiter comme vivant
-            const _iAmAlive = G.alive[ME.id] !== false;
-            return `<div class="vote-item${
-              iSelected ? " selected" : ""
-            }" onclick="selVote('${p.id}',this)" style="${
-              !_iAmAlive ? "pointer-events:none;opacity:0.6" : ""
-            }">
+            const _iAmAlive = G.alive[ME.id] !== false; // undefined = vivant
+            return `<div class="vote-item${iSelected ? " selected" : ""}"
+              onclick="selVote('${p.id}',this)"
+              style="${!_iAmAlive ? "pointer-events:none;opacity:0.6" : ""}">
             <div style="display:flex;align-items:center;gap:8px;flex:1">
               ${getAvatarHtml(p, 36)}
               <div style="flex:1">
@@ -3205,7 +3237,14 @@ if (IS_HOST) {
         const area = document.getElementById("act-area"),
           title = document.getElementById("act-title"),
           desc = document.getElementById("act-desc");
-        const alive = G.players.filter((p) => G.alive[p.id] && p.id !== ME.id);
+        if (!area || !title || !desc) return;
+        // FIX : si G.alive est vide/non-sync, utiliser tous les joueurs comme fallback
+        const aliveKeys = Object.keys(G.alive).filter(k => G.alive[k] === true);
+        const alive = G.players.filter(p => {
+          if (p.id === ME.id) return false;
+          // alive[id] === false = mort confirmé, sinon vivant
+          return G.alive[p.id] !== false;
+        });
         const tgts = alive
           .map(
             (p) =>
@@ -4915,9 +4954,10 @@ if (IS_HOST) {
           } else {
             // Attendre le signal "playing" écrit par l'hôte dans showReveal()
             const _statusRef = ref(db, "salons/" + SID + "/gameState/status");
-            const _unsubStatus = onValue(_statusRef, (s) => {
+            let _unsubStatus = null;
+            _unsubStatus = onValue(_statusRef, (s) => {
               if (!s.exists() || s.val() !== "playing") return;
-              _unsubStatus();
+              if (_unsubStatus) _unsubStatus();
               _launchInit();
             });
             // Si c'est l'hôte lui-même → lancer sans attendre (il écrira le signal)
@@ -4984,12 +5024,12 @@ if (IS_HOST) {
         if (!IS_HOST) return;
         if (G.phase !== "day") { alert("Uniquement disponible le jour !"); return; }
         if (G.voteStarted) {
-          addChat("⚡ <em>L'hôte clôture le vote.</em>", true);
+          if (IS_HOST) addChat("⚡ <em>L'hôte clôture le vote.</em>", true);
           clearInterval(G.ivals.vote);
           if (G.voteListener) { G.voteListener(); G.voteListener = null; }
           resolveVotes();
         } else {
-          addChat("⚡ <em>L'hôte lance le vote immédiatement !</em>", true);
+          if (IS_HOST) addChat("⚡ <em>L'hôte lance le vote immédiatement !</em>", true);
           startVote();
         }
       };
@@ -5017,7 +5057,7 @@ if (IS_HOST) {
       window.hostEndGame = function() {
         if (!IS_HOST) return;
         if (!confirm("Terminer la partie maintenant ?")) return;
-        addChat("⏹️ <em>L'hôte a mis fin à la partie.</em>", true);
+        if (IS_HOST) addChat("⏹️ <em>L'hôte a mis fin à la partie.</em>", true);
         update(ref(db, "salons/" + SID + "/gameState"), {
           winner: "host_ended", winnerLabel: "Partie terminée par l'hôte",
         });
