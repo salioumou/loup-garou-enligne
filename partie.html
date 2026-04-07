@@ -1258,13 +1258,21 @@ if (IS_HOST) {
             }
           }
 
-          // NOUVEAU SYSTÈME : les non-hôtes détectent le vote via voteCountdown
-          // voteCountdown est écrit par l'hôte chaque seconde dès le début du vote
-          if (gs.voteOpen && !IS_HOST && !G.voteStarted && gs.voteCountdown > 0) {
+          // Non-hôtes : déclencher le vote dès voteOpen=true
+          if (gs.voteOpen && !IS_HOST && !G.voteStarted) {
             G.voteStarted = true;
             G.isRunoff = false;
             G.runoffCandidates = null;
-            _openVoteUI(15);
+            // Synchroniser alive depuis Firebase avant d'ouvrir le panneau
+            if (gs.alive) {
+              Object.keys(gs.alive).forEach(k => {
+                G.alive[k] = gs.alive[k];
+                const dotKey = k.replace(/_/g, ".");
+                if (dotKey !== k) G.alive[dotKey] = gs.alive[k];
+              });
+            }
+            const _vDur = gs.voteCountdown || 15;
+            _openVoteUI(_vDur);
           }
 
           if (gs.victimForWitch && G.myRole === "witch" && !G.victim) {
@@ -2740,10 +2748,25 @@ if (IS_HOST) {
         G.hasVoted = false;
         G.selVote = null;
         G.votes = {};
+        G.voteListening = true;
         lockVoteBtn(false);
         showVoteBadge();
         setPhaseInfo("🗳️ Vote en cours !");
-        renderVoteList();
+        // Synchroniser G.alive depuis Firebase avant d'afficher la liste
+        get(ref(db, "salons/" + SID + "/gameState/alive")).then(snap => {
+          if (snap.exists()) {
+            const aliveData = snap.val();
+            Object.keys(aliveData).forEach(k => {
+              G.alive[k] = aliveData[k];
+              const dotKey = k.replace(/_/g, ".");
+              if (dotKey !== k) G.alive[dotKey] = aliveData[k];
+            });
+          }
+          renderVoteList();
+          renderVoteSummary();
+        }).catch(() => {
+          renderVoteList();
+        });
 
         // main-cbar en rouge
         const mc = document.getElementById("main-cbar");
@@ -2772,11 +2795,24 @@ if (IS_HOST) {
           soundVoteStart();
         }
 
-        // Écouter les votes en temps réel
+        // Écouter les votes en temps réel — résoudre si tout le monde a voté
         if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-        G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
-          (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
-        );
+        G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"), (snap) => {
+          G.votes = snap.exists() ? snap.val() : {};
+          renderVoteList();
+          renderVoteSummary();
+          // Résolution anticipée : si tous les vivants ont voté
+          if (IS_HOST && G.voteStarted) {
+            const alivePlayers = G.players.filter(p => G.alive[p.id]);
+            const votesGiven = Object.keys(G.votes).length;
+            if (votesGiven >= alivePlayers.length && alivePlayers.length > 0) {
+              clearInterval(G.ivals.vote);
+              update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: 0 });
+              if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+              resolveVotes();
+            }
+          }
+        });
 
         // Écouter voteCountdown (mis à jour par l'hôte chaque seconde)
         // FIX : let + null pour éviter "before initialization"
@@ -2858,10 +2894,12 @@ if (IS_HOST) {
               (votesForP / Math.max(1, totalVoters)) * 100
             );
             const iSelected = myVote === p.id;
+            // alive peut être undefined si Firebase pas encore sync — traiter comme vivant
+            const _iAmAlive = G.alive[ME.id] !== false;
             return `<div class="vote-item${
               iSelected ? " selected" : ""
             }" onclick="selVote('${p.id}',this)" style="${
-              !G.alive[ME.id] ? "pointer-events:none;opacity:0.6" : ""
+              !_iAmAlive ? "pointer-events:none;opacity:0.6" : ""
             }">
             <div style="display:flex;align-items:center;gap:8px;flex:1">
               ${getAvatarHtml(p, 36)}
@@ -2889,8 +2927,8 @@ if (IS_HOST) {
           </div>`;
           })
           .join("");
-        document.getElementById("vote-btn").disabled =
-          !myVote || !G.alive[ME.id];
+        const _vbAlive = G.alive[ME.id] !== false;
+        document.getElementById("vote-btn").disabled = !myVote || !_vbAlive;
       }
 
       function renderVoteSummary() {
@@ -2916,20 +2954,23 @@ if (IS_HOST) {
       }
 
       window.selVote = function (id, el) {
-        if (!G.alive[ME.id]) return;
+        // alive === false = mort confirmé. undefined = pas encore sync → laisser voter
+        if (G.alive[ME.id] === false) { showNotif("❌ Les morts ne votent pas !"); return; }
+        if (!G.voteStarted) { showNotif("⏳ Pas encore l'heure du vote !"); return; }
         if (G.isRunoff && G.runoffCandidates && !G.runoffCandidates.includes(id)) return;
         G.selVote = id;
         G.hasVoted = true;
-        const safeId = ME.id.replace(/\./g, "_");
-        set(ref(db, "salons/" + SID + "/votes/" + safeId), id);
-        document.querySelectorAll(".vote-item").forEach((v) => v.classList.remove("selected"));
-        el.classList.add("selected");
-        document.getElementById("vote-btn").disabled = false;
-        // FIX : fermer le panel vote après sélection + notif
+        const safeId = ME.id.replace(/[.]/g, "_");
+        // Écrire dans Firebase — tous voient le vote en temps réel
+        set(ref(db, "salons/" + SID + "/votes/" + safeId), id)
+          .then(() => console.log("[VOTE] ✓", ME.name, "→", id))
+          .catch(e => { console.error("[VOTE] ✗", e); showNotif("⚠️ Erreur réseau — réessayez"); });
+        document.querySelectorAll(".vote-item").forEach(v => v.classList.remove("selected"));
+        if (el) el.classList.add("selected");
+        const vb = document.getElementById("vote-btn");
+        if (vb) vb.disabled = false;
         const vName = G.players.find(p => p.id === id)?.name || "?";
-        showNotif("✅ Vote pour " + vName + " — vous pouvez changer avant la fin du timer");
-        // Revenir au chat village (le joueur peut réouvrir via le bouton vote)
-        setTimeout(() => goTab("village", null), 800);
+        showNotif("✅ Vote pour " + vName + " — vous pouvez changer avant la fin");
       };
 
       // Verrouiller/déverrouiller le bouton Vote
@@ -2989,7 +3030,14 @@ if (IS_HOST) {
       };
 
       function resolveVotes() {
-        const votes = G.votes || {};
+        // Lire les votes FRAIS depuis Firebase pour ne rater aucun vote de dernière seconde
+        get(ref(db, "salons/" + SID + "/votes")).then(snap => {
+          const votes = snap.exists() ? snap.val() : {};
+          _doResolveVotes(votes);
+        }).catch(() => _doResolveVotes(G.votes || {}));
+      }
+
+      function _doResolveVotes(votes) {
         const tally = {};
         Object.values(votes).forEach((targetId) => {
           tally[targetId] = (tally[targetId] || 0) + 1;
@@ -2999,10 +3047,11 @@ if (IS_HOST) {
         });
         G.corbeauBonus = {}; // Réinitialiser
         if (!Object.keys(tally).length) {
-          if (IS_HOST) addChat("⏰ <em>Personne n'a voté — égalité !</em>", true);
+          if (IS_HOST) addChat("⏰ <em>Personne n'a voté — la nuit tombe.</em>", true);
           addJournal("Jour " + G.turn + " — aucun vote.");
           set(ref(db, "salons/" + SID + "/votes"), null);
-          runNight();
+          update(ref(db, "salons/" + SID + "/gameState"), { voteOpen: false, voteCountdown: 0 });
+          if (IS_HOST) runNight();
           return;
         }
         const maxVotes = Math.max(...Object.values(tally));
