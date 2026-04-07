@@ -1257,67 +1257,9 @@ if (IS_HOST) {
             }
           }
 
-          if (gs.voteOpen && !IS_HOST) {
-            if (!G.voteStarted && gs.phaseStart && gs.phaseDuration) {
-              G.voteStarted = true;
-              G.voteListening = true;
-              G.hasVoted = false;
-              lockVoteBtn(false);
-              showVoteBadge();
-
-              // FIX : timer dans main-cbar (toujours visible)
-              const _mcNH = document.getElementById("main-cbar");
-              const _clNH = document.getElementById("cbar-label");
-              const _cfNH = document.getElementById("cbar-fill");
-              if (_mcNH) _mcNH.style.display = "block";
-              if (_clNH) _clNH.textContent = "🗳️ Vote — " + gs.phaseDuration + "s !";
-              if (_cfNH) { _cfNH.style.background = "#be6d6d"; _cfNH.style.width = "100%"; }
-
-              const vcbar = document.getElementById("vote-cbar");
-              if (vcbar) vcbar.style.display = "block";
-              const vdesc = document.getElementById("vote-desc");
-              if (vdesc) vdesc.textContent = "Choisissez le joueur à éliminer :";
-              const vfill = document.getElementById("vote-fill");
-              if (vfill) { vfill.style.background = "#be6d6d"; vfill.style.width = "100%"; }
-
-              renderVoteList();
-              // FIX : ouvrir le panneau vote AUTOMATIQUEMENT pour les non-hôtes
-              if (G.alive[ME.id] !== false) {
-                goTab("vote", document.getElementById("tbtn-vote"));
-                showGameNotif("🗳️", "C'est l'heure du vote ! Choisissez qui éliminer.", 5000);
-                soundVoteStart();
-              }
-
-              if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-              G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
-                (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
-              );
-              // Non-hôte : écouter voteCountdown via Firebase
-              const _vcRef = ref(db, "salons/" + SID + "/gameState/voteCountdown");
-              const _vcUnsub = onValue(_vcRef, (snap) => {
-                if (!snap.exists()) return;
-                const r = snap.val();
-                const m2 = Math.floor(r/60), s2 = r%60;
-                const ts = m2 + ":" + (s2<10?"0":"") + s2;
-                const _ct = document.getElementById("cbar-time");
-                const _cf = document.getElementById("cbar-fill");
-                const _vt = document.getElementById("vote-time");
-                const _vf = document.getElementById("vote-fill");
-                if (_ct) _ct.textContent = ts;
-                if (_vt) _vt.textContent = ts;
-                const pct = Math.round((r / (_vPhaseDur||15)) * 100);
-                if (_cf) { _cf.style.width = pct+"%"; _cf.style.background = "#be6d6d"; }
-                if (_vf) { _vf.style.width = pct+"%"; _vf.style.background = "#be6d6d"; }
-                if (r <= 0) {
-                  _vcUnsub();
-                  const _mc4 = document.getElementById("main-cbar");
-                  if (_mc4) _mc4.style.display = "none";
-                  const _vc3 = document.getElementById("vote-cbar");
-                  if (_vc3) _vc3.style.display = "none";
-                  if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-                }
-              });
-            }
+          if (gs.voteOpen && !IS_HOST && !G.voteStarted) {
+            // startVote() gère tout : UI, chrono Firebase, listener votes
+            startVote();
           }
 
           if (gs.victimForWitch && G.myRole === "witch" && !G.victim) {
@@ -2748,107 +2690,110 @@ if (IS_HOST) {
       }
 
       function startVote() {
-        if (G.voteStarted) return; // éviter double déclenchement
+        if (G.voteStarted) return;
         G.voteStarted = true;
         G.hasVoted = false;
-        lockVoteBtn(false);
-        const _voteStartTs = Date.now();
-        const _voteDur = 15; // 15 secondes fixes
-        if (IS_HOST) {
-          // FIX : tout en un seul update atomique — voteOpen + phaseStart ensemble
-          update(ref(db, "salons/" + SID + "/gameState"), {
-            phase: "vote",
-            voteOpen: true,
-            voteResult: null,
-            alive: Object.assign({}, G.alive),
-            turn: G.turn,
-            phaseStart: _voteStartTs,
-            phaseDuration: _voteDur,
-          });
-        }
-        // FIX : démarrer aussi le timer localement pour l'hôte sans attendre Firebase
-        const _vFill = document.getElementById("vote-fill");
-        if (_vFill) { _vFill.style.background = "#be6d6d"; _vFill.style.width = "100%"; }
-        const _vCbar = document.getElementById("vote-cbar");
-        if (_vCbar) _vCbar.style.display = "block";
-        // FIX double msg : seul l'hôte écrit ce message
-        if (IS_HOST) addChat(
-          "🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?",
-          true
-        );
-        // FIX timer vote : afficher dans main-cbar (toujours visible) en rouge
-        const _mcV = document.getElementById("main-cbar");
-        const _clV = document.getElementById("cbar-label");
-        const _cfV = document.getElementById("cbar-fill");
-        if (_mcV) _mcV.style.display = "block";
-        if (_clV) _clV.textContent = "🗳️ Vote — " + _voteDur + "s !";
-        if (_cfV) { _cfV.style.background = "#be6d6d"; _cfV.style.width = "100%"; }
-        soundVoteStart();
-        showVoteBadge();
-        if (G.allowBots) scheduleBotsVote();
-        showGameNotif("🗳️", "C'est l'heure du vote ! Choisissez qui éliminer.", 6000);
-        setPhaseInfo("🗳️ Vote en cours !");
         G.selVote = null;
         G.votes = {};
         G.isRunoff = false;
         G.runoffCandidates = null;
-        renderVoteList();
-        // Ouvrir le panneau vote seulement pour les vivants
+        lockVoteBtn(false);
+
+        const VOTE_DUR = 15;
+
+        // ── UI commune hôte + non-hôtes ─────────────────────────────────────
+        // Afficher le chrono en rouge dans main-cbar
+        const _mcV = document.getElementById("main-cbar");
+        const _clV = document.getElementById("cbar-label");
+        const _cfV = document.getElementById("cbar-fill");
+        const _ctV = document.getElementById("cbar-time");
+        if (_mcV) _mcV.style.display = "block";
+        if (_clV) _clV.textContent = "🗳️ Vote — " + VOTE_DUR + "s !";
+        if (_cfV) { _cfV.style.background = "#be6d6d"; _cfV.style.width = "100%"; }
+        if (_ctV) _ctV.textContent = "0:" + VOTE_DUR;
+
+        // Afficher vote-cbar dans l'overlay
+        const _vcV = document.getElementById("vote-cbar");
+        if (_vcV) _vcV.style.display = "block";
+        const _vfV = document.getElementById("vote-fill");
+        if (_vfV) { _vfV.style.background = "#be6d6d"; _vfV.style.width = "100%"; }
+        const _vtV = document.getElementById("vote-time");
+        if (_vtV) _vtV.textContent = "0:" + VOTE_DUR;
+        const _vdV = document.getElementById("vote-desc");
+        if (_vdV) _vdV.textContent = "Choisissez le joueur à éliminer :";
+
+        // Ouvrir le panneau vote pour les vivants
         if (G.alive[ME.id] !== false) {
           goTab("vote", document.getElementById("tbtn-vote"));
+          showGameNotif("🗳️", "C'est l'heure du vote ! Choisissez qui éliminer.", 6000);
+          soundVoteStart();
         }
-        document.getElementById("vote-cbar").style.display = "block";
-        document.getElementById("vote-desc").textContent =
-          "Choisissez le joueur à éliminer :";
-        set(ref(db, "salons/" + SID + "/votes"), {});
-        G.voteListener = onValue(
-          ref(db, "salons/" + SID + "/votes"),
-          (snap) => {
-            G.votes = snap.exists() ? snap.val() : {};
-            renderVoteList();
-            renderVoteSummary();
-          }
+        showVoteBadge();
+        setPhaseInfo("🗳️ Vote en cours !");
+        renderVoteList();
+
+        // Écouter les votes Firebase (tous les joueurs)
+        if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+        G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
+          (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
         );
-        const fill = document.getElementById("vote-fill");
-        document.getElementById("vote-cbar").style.display = "block";
-        const VOTE_DURATION = 15; // FIX : 15 secondes max pour voter
-        const voteStart = Date.now();
-        if (IS_HOST) {
-          update(ref(db, "salons/" + SID + "/gameState"), {
-            phaseStart: voteStart,
-            phaseDuration: VOTE_DURATION,
-            phase: "vote",
-          });
-        }
-        // L'hôte écrit voteCountdown chaque seconde — tout le monde lit Firebase
-        if (IS_HOST) {
-          let _vRem = _voteDur;
-          function _updateVoteTimer(r) {
-            const _cf = document.getElementById("cbar-fill");
-            const _ct = document.getElementById("cbar-time");
-            const _vf = document.getElementById("vote-fill");
-            const _vt = document.getElementById("vote-time");
+
+        // Écouter voteCountdown Firebase (non-hôtes suivent le chrono de l'hôte)
+        if (!IS_HOST) {
+          const _vcRef = ref(db, "salons/" + SID + "/gameState/voteCountdown");
+          const _vcUnsub = onValue(_vcRef, (snap) => {
+            if (!snap.exists()) return;
+            const r = snap.val();
             const m2 = Math.floor(r/60), s2 = r%60;
             const ts = m2 + ":" + (s2<10?"0":"") + s2;
-            if (_ct) _ct.textContent = ts;
-            if (_vt) _vt.textContent = ts;
-            const pct = Math.round((r/_voteDur)*100);
-            if (_cf) { _cf.style.width = pct+"%"; _cf.style.background = "#be6d6d"; }
-            if (_vf) { _vf.style.width = pct+"%"; _vf.style.background = "#be6d6d"; }
+            if (_ctV) _ctV.textContent = ts;
+            if (_vtV) _vtV.textContent = ts;
+            const pct = Math.round((r/VOTE_DUR)*100);
+            if (_cfV) { _cfV.style.width = pct+"%"; }
+            if (_vfV) { _vfV.style.width = pct+"%"; }
+            if (r <= 0) {
+              _vcUnsub();
+              if (_mcV) _mcV.style.display = "none";
+              if (_vcV) _vcV.style.display = "none";
+              if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+            }
+          });
+        }
+
+        if (IS_HOST) {
+          // Signaler ouverture du vote à tous
+          if (IS_HOST) addChat("🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?", true);
+          set(ref(db, "salons/" + SID + "/votes"), {});
+          update(ref(db, "salons/" + SID + "/gameState"), {
+            phase: "vote",
+            voteOpen: true,
+            voteResult: null,
+            voteCountdown: VOTE_DUR,
+            alive: Object.assign({}, G.alive),
+            turn: G.turn,
+          });
+          if (G.allowBots) scheduleBotsVote();
+
+          // Chrono : l'hôte écrit voteCountdown chaque seconde
+          let _vRem = VOTE_DUR;
+          function _updateVT(r) {
+            const m2 = Math.floor(r/60), s2 = r%60;
+            const ts = m2 + ":" + (s2<10?"0":"") + s2;
+            if (_ctV) _ctV.textContent = ts;
+            if (_vtV) _vtV.textContent = ts;
+            const pct = Math.round((r/VOTE_DUR)*100);
+            if (_cfV) _cfV.style.width = pct+"%";
+            if (_vfV) _vfV.style.width = pct+"%";
           }
-          _updateVoteTimer(_vRem);
-          update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: _vRem });
           clearInterval(G.ivals.vote);
           G.ivals.vote = setInterval(() => {
             _vRem--;
-            _updateVoteTimer(Math.max(0, _vRem));
+            _updateVT(Math.max(0, _vRem));
             update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: Math.max(0, _vRem) });
             if (_vRem <= 0) {
               clearInterval(G.ivals.vote);
-              const _mc3 = document.getElementById("main-cbar");
-              if (_mc3) _mc3.style.display = "none";
-              const _vc2 = document.getElementById("vote-cbar");
-              if (_vc2) _vc2.style.display = "none";
+              if (_mcV) _mcV.style.display = "none";
+              if (_vcV) _vcV.style.display = "none";
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               resolveVotes();
             }
