@@ -1083,16 +1083,24 @@ if (IS_HOST) {
                 }
 
                 goTab("village", document.getElementById("tbtn-village"));
-                G.ivals.main = startTimerFromTs(
-                  gs.phaseStart,
-                  gs.phaseDuration,
-                  "cbar-fill",
-                  "cbar-time",
-                  () => {
-                    document.getElementById("main-cbar").style.display = "none";
-                    startVote();
+                // Non-hôte : écouter dayCountdown via Firebase (écrit par l'hôte chaque seconde)
+                const _dcFill = document.getElementById("cbar-fill");
+                const _dcTime = document.getElementById("cbar-time");
+                const _dcRef = ref(db, "salons/" + SID + "/gameState/dayCountdown");
+                const _dcUnsub = onValue(_dcRef, (snap) => {
+                  if (!snap.exists()) return;
+                  const r = snap.val();
+                  const m2 = Math.floor(r/60), s2 = r%60;
+                  if (_dcTime) _dcTime.textContent = m2 + ":" + (s2<10?"0":"") + s2;
+                  if (_dcFill) {
+                    const dur = gs.phaseDuration || 180;
+                    _dcFill.style.width = Math.round((r/dur)*100) + "%";
+                    if (r <= 15) _dcFill.style.background = "#be6d6d";
                   }
-                );
+                  if (r <= 0) { _dcUnsub(); }
+                });
+                // Stocker unsub pour le nettoyer si besoin
+                G._dayCountdownUnsub = _dcUnsub;
               }
 
               if (gs.phase === "vote") {
@@ -1284,16 +1292,31 @@ if (IS_HOST) {
               G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
                 (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
               );
-              clearInterval(G.ivals.vote);
-              G.ivals.vote = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "cbar-fill", "cbar-time", () => {
-                const _mc4 = document.getElementById("main-cbar");
-                if (_mc4) _mc4.style.display = "none";
-                const _vc3 = document.getElementById("vote-cbar");
-                if (_vc3) _vc3.style.display = "none";
-                if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+              // Non-hôte : écouter voteCountdown via Firebase
+              const _vcRef = ref(db, "salons/" + SID + "/gameState/voteCountdown");
+              const _vcUnsub = onValue(_vcRef, (snap) => {
+                if (!snap.exists()) return;
+                const r = snap.val();
+                const m2 = Math.floor(r/60), s2 = r%60;
+                const ts = m2 + ":" + (s2<10?"0":"") + s2;
+                const _ct = document.getElementById("cbar-time");
+                const _cf = document.getElementById("cbar-fill");
+                const _vt = document.getElementById("vote-time");
+                const _vf = document.getElementById("vote-fill");
+                if (_ct) _ct.textContent = ts;
+                if (_vt) _vt.textContent = ts;
+                const pct = Math.round((r / (_vPhaseDur||15)) * 100);
+                if (_cf) { _cf.style.width = pct+"%"; _cf.style.background = "#be6d6d"; }
+                if (_vf) { _vf.style.width = pct+"%"; _vf.style.background = "#be6d6d"; }
+                if (r <= 0) {
+                  _vcUnsub();
+                  const _mc4 = document.getElementById("main-cbar");
+                  if (_mc4) _mc4.style.display = "none";
+                  const _vc3 = document.getElementById("vote-cbar");
+                  if (_vc3) _vc3.style.display = "none";
+                  if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+                }
               });
-              clearInterval(G.ivals.voteOverlay);
-              G.ivals.voteOverlay = startTimerFromTs(gs.phaseStart, gs.phaseDuration, "vote-fill", "vote-time", () => {});
             }
           }
 
@@ -1439,6 +1462,8 @@ if (IS_HOST) {
       function clearIvals() {
         Object.values(G.ivals).forEach((v) => clearInterval(v));
         G.ivals = { main: null, vote: null, action: null, voteOverlay: null };
+        // Nettoyer les listeners Firebase de countdown
+        if (G._dayCountdownUnsub) { G._dayCountdownUnsub(); G._dayCountdownUnsub = null; }
       }
 
       function showReveal() {
@@ -2696,18 +2721,29 @@ if (IS_HOST) {
               nightStepRole: null,
             });
           }
-          // L'hôte démarre aussi son timer depuis dayStart (identique à Firebase)
-          G.ivals.main = startTimerFromTs(
-            dayStart,
-            DAY_DURATION,
-            "cbar-fill",
-            "cbar-time",
-            () => {
-              document.getElementById("main-cbar").style.display = "none";
-              if (IS_HOST) startVote();
-              // Non-hôtes : attendent voteOpen via Firebase
+          // L'hôte écrit dayCountdown chaque seconde — non-hôtes lisent via Firebase
+          if (IS_HOST) {
+            let _dayRem = DAY_DURATION;
+            const _dayFill = document.getElementById("cbar-fill");
+            const _dayTime = document.getElementById("cbar-time");
+            function _updateDayTimer(r) {
+              const m2 = Math.floor(r/60), s2 = r%60;
+              if (_dayTime) _dayTime.textContent = m2 + ":" + (s2<10?"0":"") + s2;
+              if (_dayFill) _dayFill.style.width = Math.round((r/DAY_DURATION)*100) + "%";
+              if (r <= 15 && _dayFill) _dayFill.style.background = "#be6d6d";
             }
-          );
+            _updateDayTimer(_dayRem);
+            G.ivals.main = setInterval(() => {
+              _dayRem--;
+              _updateDayTimer(Math.max(0, _dayRem));
+              update(ref(db, "salons/" + SID + "/gameState"), { dayCountdown: Math.max(0, _dayRem) });
+              if (_dayRem <= 0) {
+                clearInterval(G.ivals.main);
+                document.getElementById("main-cbar").style.display = "none";
+                startVote();
+              }
+            }, 1000);
+          }
         })();
       }
 
@@ -2784,31 +2820,40 @@ if (IS_HOST) {
             phase: "vote",
           });
         }
-        clearInterval(G.ivals.vote);
-        // Timer dans vote-cbar (overlay) ET dans cbar-fill/cbar-time (main-cbar)
-        G.ivals.vote = startTimerFromTs(
-          _voteStartTs,
-          _voteDur,
-          "cbar-fill",   // utiliser la barre principale toujours visible
-          "cbar-time",
-          () => {
-            const _mc3 = document.getElementById("main-cbar");
-            if (_mc3) _mc3.style.display = "none";
-            const _vc2 = document.getElementById("vote-cbar");
-            if (_vc2) _vc2.style.display = "none";
-            if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-            if (IS_HOST) resolveVotes();
+        // L'hôte écrit voteCountdown chaque seconde — tout le monde lit Firebase
+        if (IS_HOST) {
+          let _vRem = _voteDur;
+          function _updateVoteTimer(r) {
+            const _cf = document.getElementById("cbar-fill");
+            const _ct = document.getElementById("cbar-time");
+            const _vf = document.getElementById("vote-fill");
+            const _vt = document.getElementById("vote-time");
+            const m2 = Math.floor(r/60), s2 = r%60;
+            const ts = m2 + ":" + (s2<10?"0":"") + s2;
+            if (_ct) _ct.textContent = ts;
+            if (_vt) _vt.textContent = ts;
+            const pct = Math.round((r/_voteDur)*100);
+            if (_cf) { _cf.style.width = pct+"%"; _cf.style.background = "#be6d6d"; }
+            if (_vf) { _vf.style.width = pct+"%"; _vf.style.background = "#be6d6d"; }
           }
-        );
-        // Synchroniser aussi vote-fill avec le même timer pour l'overlay
-        clearInterval(G.ivals.voteOverlay);
-        G.ivals.voteOverlay = startTimerFromTs(
-          _voteStartTs,
-          _voteDur,
-          "vote-fill",
-          "vote-time",
-          () => {}
-        );
+          _updateVoteTimer(_vRem);
+          update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: _vRem });
+          clearInterval(G.ivals.vote);
+          G.ivals.vote = setInterval(() => {
+            _vRem--;
+            _updateVoteTimer(Math.max(0, _vRem));
+            update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: Math.max(0, _vRem) });
+            if (_vRem <= 0) {
+              clearInterval(G.ivals.vote);
+              const _mc3 = document.getElementById("main-cbar");
+              if (_mc3) _mc3.style.display = "none";
+              const _vc2 = document.getElementById("vote-cbar");
+              if (_vc2) _vc2.style.display = "none";
+              if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+              resolveVotes();
+            }
+          }, 1000);
+        }
       }
 
       function renderVoteList() {
@@ -4729,47 +4774,64 @@ if (IS_HOST) {
       };
 
       let _nightTimerInterval = null;
+      let _nightCountdownUnsub = null; // listener Firebase pour non-hôtes
 
-      window._showNightTimer = function(label, tsStart, duration, roleImg) {
-        clearInterval(_nightTimerInterval);
-
+      // Render le bandeau nuit avec le temps restant
+      function _renderNightBanner(label, rem, duration, roleImg) {
         const banner = document.getElementById("phase-banner");
         if (!banner) return;
-
         banner.className = "phase-banner phase-night";
         banner.style.padding = "10px 14px";
+        const m = Math.floor(rem / 60), s = rem % 60;
+        const timeStr = m + ":" + (s < 10 ? "0" : "") + s;
+        const pct = Math.round((rem / duration) * 100);
+        const barColor = rem <= 8 ? "#be4444" : "#9999ff";
+        const timeColor = rem <= 8 ? "#be4444" : "#9999ff";
+        banner.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px">
+            <span style="display:inline-flex;align-items:center;gap:8px;font-family:'Cinzel',serif;font-size:1rem;color:#9999ff">
+              ${roleImg ? `<img src="${roleImg}" style="width:26px;height:35px;border-radius:4px;object-fit:cover;object-position:top;flex-shrink:0;box-shadow:0 0 8px rgba(150,150,255,0.4)"/>` : "⚡"}
+              ${label}
+            </span>
+            <span style="font-family:'Cinzel',serif;font-weight:700;font-size:1.2rem;color:${timeColor};min-width:42px;text-align:right">${timeStr}</span>
+          </div>
+          <div style="width:100%;height:7px;background:rgba(255,255,255,0.08);border-radius:6px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${barColor};border-radius:6px;transition:width 0.9s linear,background 0.3s;box-shadow:0 0 6px ${barColor}55"></div>
+          </div>`;
+      }
 
-        function renderBanner(rem) {
-          const m = Math.floor(rem / 60), s = rem % 60;
-          const timeStr = m + ":" + (s < 10 ? "0" : "") + s;
-          const pct = Math.round((rem / duration) * 100);
-          const barColor = rem <= 8 ? "#be4444" : "#9999ff";
-          const timeColor = rem <= 8 ? "#be4444" : "#9999ff";
-          banner.innerHTML = `
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px">
-              <span style="display:inline-flex;align-items:center;gap:8px;font-family:'Cinzel',serif;font-size:1rem;color:#9999ff">
-                ${roleImg ? `<img src="${roleImg}" style="width:26px;height:35px;border-radius:4px;object-fit:cover;object-position:top;flex-shrink:0;box-shadow:0 0 8px rgba(150,150,255,0.4)"/>` : "⚡"}
-                ${label}
-              </span>
-              <span style="font-family:'Cinzel',serif;font-weight:700;font-size:1.2rem;color:${timeColor};min-width:42px;text-align:right">${timeStr}</span>
-            </div>
-            <div style="width:100%;height:7px;background:rgba(255,255,255,0.08);border-radius:6px;overflow:hidden">
-              <div style="height:100%;width:${pct}%;background:${barColor};border-radius:6px;transition:width 0.9s linear,background 0.3s;box-shadow:0 0 6px ${barColor}55"></div>
-            </div>`;
+      // Appelé par l'hôte dans nextNightStep() — il écrit nightStepCountdown chaque seconde
+      window._showNightTimer = function(label, tsStart, duration, roleImg) {
+        clearInterval(_nightTimerInterval);
+        if (_nightCountdownUnsub) { _nightCountdownUnsub(); _nightCountdownUnsub = null; }
+
+        if (IS_HOST) {
+          // L'hôte écrit le chiffre dans Firebase chaque seconde
+          let rem = duration;
+          _renderNightBanner(label, rem, duration, roleImg);
+          update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: rem });
+          _nightTimerInterval = setInterval(() => {
+            rem--;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: Math.max(0, rem) });
+            _renderNightBanner(label, Math.max(0, rem), duration, roleImg);
+            // Note : advNight() est déclenché par showActionBar/setTimeout côté hôte
+          }, 1000);
+        } else {
+          // Non-hôte : afficher duration immédiatement, puis écouter Firebase
+          _renderNightBanner(label, duration, duration, roleImg);
+          const _cdRef = ref(db, "salons/" + SID + "/gameState/nightStepCountdown");
+          _nightCountdownUnsub = onValue(_cdRef, (snap) => {
+            if (!snap.exists()) return;
+            const rem = snap.val();
+            _renderNightBanner(label, rem, duration, roleImg);
+          });
         }
-
-        renderBanner(duration); // affichage immédiat à 100%
-
-        function tick() {
-          const rem = Math.max(0, duration - Math.floor((Date.now() - tsStart) / 1000));
-          renderBanner(rem);
-        }
-        tick();
-        _nightTimerInterval = setInterval(tick, 1000);
       };
 
       window._hideNightTimer = function() {
         clearInterval(_nightTimerInterval);
+        if (_nightCountdownUnsub) { _nightCountdownUnsub(); _nightCountdownUnsub = null; }
+        update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: null });
         const banner = document.getElementById("phase-banner");
         if (banner) {
           banner.className = "phase-banner phase-night";
