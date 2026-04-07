@@ -1083,23 +1083,24 @@ if (IS_HOST) {
                 }
 
                 goTab("village", document.getElementById("tbtn-village"));
-                // Non-hôte : écouter dayCountdown via Firebase (écrit par l'hôte chaque seconde)
+                // Non-hôte : écouter dayCountdown via Firebase
                 const _dcFill = document.getElementById("cbar-fill");
                 const _dcTime = document.getElementById("cbar-time");
-                const _dcRef = ref(db, "salons/" + SID + "/gameState/dayCountdown");
-                const _dcUnsub = onValue(_dcRef, (snap) => {
+                const _dcDur = gs.phaseDuration || 180;
+                // FIX : let au lieu de const pour éviter "before initialization"
+                let _dcUnsub = null;
+                _dcUnsub = onValue(ref(db, "salons/" + SID + "/gameState/dayCountdown"), (snap) => {
                   if (!snap.exists()) return;
                   const r = snap.val();
                   const m2 = Math.floor(r/60), s2 = r%60;
                   if (_dcTime) _dcTime.textContent = m2 + ":" + (s2<10?"0":"") + s2;
                   if (_dcFill) {
-                    const dur = gs.phaseDuration || 180;
-                    _dcFill.style.width = Math.round((r/dur)*100) + "%";
-                    if (r <= 15) _dcFill.style.background = "#be6d6d";
+                    _dcFill.style.width = Math.round((r/_dcDur)*100) + "%";
+                    // FIX : garder la couleur or (var(--accent)), pas rouge
+                    _dcFill.style.background = "var(--accent)";
                   }
-                  if (r <= 0) { _dcUnsub(); }
+                  if (r <= 0 && _dcUnsub) { _dcUnsub(); }
                 });
-                // Stocker unsub pour le nettoyer si besoin
                 G._dayCountdownUnsub = _dcUnsub;
               }
 
@@ -1258,8 +1259,10 @@ if (IS_HOST) {
           }
 
           if (gs.voteOpen && !IS_HOST && !G.voteStarted) {
-            // startVote() gère tout : UI, chrono Firebase, listener votes
-            startVote();
+            // Non-hôte : ouvrir l'UI de vote directement
+            G.voteStarted = true;
+            const _vd = gs.voteCountdown || 15;
+            _openVoteUI(_vd);
           }
 
           if (gs.victimForWitch && G.myRole === "witch" && !G.victim) {
@@ -2689,80 +2692,81 @@ if (IS_HOST) {
         })();
       }
 
-      function startVote() {
-        if (G.voteStarted) return;
-        G.voteStarted = true;
+      // ── Ouvrir l'UI de vote pour un joueur (hôte ou non-hôte) ─────────────
+      function _openVoteUI(voteDur) {
         G.hasVoted = false;
         G.selVote = null;
         G.votes = {};
-        G.isRunoff = false;
-        G.runoffCandidates = null;
         lockVoteBtn(false);
+        showVoteBadge();
+        setPhaseInfo("🗳️ Vote en cours !");
+        renderVoteList();
 
-        const VOTE_DUR = 15;
+        // main-cbar en rouge
+        const mc = document.getElementById("main-cbar");
+        const cl = document.getElementById("cbar-label");
+        const cf = document.getElementById("cbar-fill");
+        const ct = document.getElementById("cbar-time");
+        if (mc) mc.style.display = "block";
+        if (cl) cl.textContent = "🗳️ Vote — " + voteDur + "s !";
+        if (cf) { cf.style.background = "#be6d6d"; cf.style.width = "100%"; }
+        if (ct) ct.textContent = "0:" + (voteDur < 10 ? "0" : "") + voteDur;
 
-        // ── UI commune hôte + non-hôtes ─────────────────────────────────────
-        // Afficher le chrono en rouge dans main-cbar
-        const _mcV = document.getElementById("main-cbar");
-        const _clV = document.getElementById("cbar-label");
-        const _cfV = document.getElementById("cbar-fill");
-        const _ctV = document.getElementById("cbar-time");
-        if (_mcV) _mcV.style.display = "block";
-        if (_clV) _clV.textContent = "🗳️ Vote — " + VOTE_DUR + "s !";
-        if (_cfV) { _cfV.style.background = "#be6d6d"; _cfV.style.width = "100%"; }
-        if (_ctV) _ctV.textContent = "0:" + VOTE_DUR;
+        // vote-cbar dans l'overlay
+        const vc = document.getElementById("vote-cbar");
+        const vf = document.getElementById("vote-fill");
+        const vt = document.getElementById("vote-time");
+        const vd = document.getElementById("vote-desc");
+        if (vc) vc.style.display = "block";
+        if (vf) { vf.style.background = "#be6d6d"; vf.style.width = "100%"; }
+        if (vt) vt.textContent = "0:" + (voteDur < 10 ? "0" : "") + voteDur;
+        if (vd) vd.textContent = "Choisissez le joueur à éliminer :";
 
-        // Afficher vote-cbar dans l'overlay
-        const _vcV = document.getElementById("vote-cbar");
-        if (_vcV) _vcV.style.display = "block";
-        const _vfV = document.getElementById("vote-fill");
-        if (_vfV) { _vfV.style.background = "#be6d6d"; _vfV.style.width = "100%"; }
-        const _vtV = document.getElementById("vote-time");
-        if (_vtV) _vtV.textContent = "0:" + VOTE_DUR;
-        const _vdV = document.getElementById("vote-desc");
-        if (_vdV) _vdV.textContent = "Choisissez le joueur à éliminer :";
-
-        // Ouvrir le panneau vote pour les vivants
+        // Ouvrir panneau vote pour les vivants
         if (G.alive[ME.id] !== false) {
           goTab("vote", document.getElementById("tbtn-vote"));
           showGameNotif("🗳️", "C'est l'heure du vote ! Choisissez qui éliminer.", 6000);
           soundVoteStart();
         }
-        showVoteBadge();
-        setPhaseInfo("🗳️ Vote en cours !");
-        renderVoteList();
 
-        // Écouter les votes Firebase (tous les joueurs)
+        // Écouter les votes en temps réel
         if (G.voteListener) { G.voteListener(); G.voteListener = null; }
         G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
           (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
         );
 
-        // Écouter voteCountdown Firebase (non-hôtes suivent le chrono de l'hôte)
-        if (!IS_HOST) {
-          const _vcRef = ref(db, "salons/" + SID + "/gameState/voteCountdown");
-          const _vcUnsub = onValue(_vcRef, (snap) => {
-            if (!snap.exists()) return;
-            const r = snap.val();
-            const m2 = Math.floor(r/60), s2 = r%60;
-            const ts = m2 + ":" + (s2<10?"0":"") + s2;
-            if (_ctV) _ctV.textContent = ts;
-            if (_vtV) _vtV.textContent = ts;
-            const pct = Math.round((r/VOTE_DUR)*100);
-            if (_cfV) { _cfV.style.width = pct+"%"; }
-            if (_vfV) { _vfV.style.width = pct+"%"; }
-            if (r <= 0) {
-              _vcUnsub();
-              if (_mcV) _mcV.style.display = "none";
-              if (_vcV) _vcV.style.display = "none";
-              if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-            }
-          });
-        }
+        // Écouter voteCountdown (mis à jour par l'hôte chaque seconde)
+        // FIX : let + null pour éviter "before initialization"
+        let _vcUnsub2 = null;
+        _vcUnsub2 = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
+          if (!snap.exists()) return;
+          const r = snap.val();
+          const m2 = Math.floor(r/60), s2 = r%60;
+          const ts = m2 + ":" + (s2<10?"0":"") + s2;
+          if (ct) ct.textContent = ts;
+          if (vt) vt.textContent = ts;
+          const pct = Math.round((r / voteDur) * 100);
+          if (cf) cf.style.width = pct + "%";
+          if (vf) vf.style.width = pct + "%";
+          if (r <= 0) {
+            if (_vcUnsub2) { _vcUnsub2(); _vcUnsub2 = null; }
+            if (mc) mc.style.display = "none";
+            if (vc) vc.style.display = "none";
+            if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+          }
+        });
+      }
+
+      function startVote() {
+        if (G.voteStarted) return;
+        G.voteStarted = true;
+        G.isRunoff = false;
+        G.runoffCandidates = null;
+
+        const VOTE_DUR = 15;
 
         if (IS_HOST) {
-          // Signaler ouverture du vote à tous
-          if (IS_HOST) addChat("🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?", true);
+          addChat("🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?", true);
           set(ref(db, "salons/" + SID + "/votes"), {});
           update(ref(db, "salons/" + SID + "/gameState"), {
             phase: "vote",
@@ -2774,31 +2778,23 @@ if (IS_HOST) {
           });
           if (G.allowBots) scheduleBotsVote();
 
-          // Chrono : l'hôte écrit voteCountdown chaque seconde
+          // Ouvrir l'UI pour l'hôte
+          _openVoteUI(VOTE_DUR);
+
+          // Décrémenter voteCountdown chaque seconde
           let _vRem = VOTE_DUR;
-          function _updateVT(r) {
-            const m2 = Math.floor(r/60), s2 = r%60;
-            const ts = m2 + ":" + (s2<10?"0":"") + s2;
-            if (_ctV) _ctV.textContent = ts;
-            if (_vtV) _vtV.textContent = ts;
-            const pct = Math.round((r/VOTE_DUR)*100);
-            if (_cfV) _cfV.style.width = pct+"%";
-            if (_vfV) _vfV.style.width = pct+"%";
-          }
           clearInterval(G.ivals.vote);
           G.ivals.vote = setInterval(() => {
             _vRem--;
-            _updateVT(Math.max(0, _vRem));
             update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: Math.max(0, _vRem) });
             if (_vRem <= 0) {
               clearInterval(G.ivals.vote);
-              if (_mcV) _mcV.style.display = "none";
-              if (_vcV) _vcV.style.display = "none";
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               resolveVotes();
             }
           }, 1000);
         }
+        // Les non-hôtes : leur UI est ouverte par le handler voteOpen dans onValue
       }
 
       function renderVoteList() {
@@ -4764,8 +4760,8 @@ if (IS_HOST) {
         } else {
           // Non-hôte : afficher duration immédiatement, puis écouter Firebase
           _renderNightBanner(label, duration, duration, roleImg);
-          const _cdRef = ref(db, "salons/" + SID + "/gameState/nightStepCountdown");
-          _nightCountdownUnsub = onValue(_cdRef, (snap) => {
+          const _cdRef2 = ref(db, "salons/" + SID + "/gameState/nightStepCountdown");
+          _nightCountdownUnsub = onValue(_cdRef2, (snap) => {
             if (!snap.exists()) return;
             const rem = snap.val();
             _renderNightBanner(label, rem, duration, roleImg);
