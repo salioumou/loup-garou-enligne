@@ -457,7 +457,25 @@
       if (!sess) window.location.href = "connexion.html";
       const ME = JSON.parse(sess || "{}");
       // ME_SAFE_ID : version sans points pour les clés Firebase (Firebase remplace . par _)
-      const ME_SAFE_ID = ME.id ? ME.id.replace(/\./g, "_") : ME.id;
+      const ME_SAFE_ID = ME.id ? ME.id.replace(/[.$#\[\]/]/g, "_") : ME.id;
+
+      // Helper : récupérer l'état alive d'un joueur (cherche les deux versions de clé)
+      function isAlive(uid) {
+        if (uid === undefined || uid === null) return false;
+        const safe = uid.replace(/[.$#\[\]/]/g, "_");
+        // false = mort explicite, undefined/true = vivant
+        if (G.alive[uid] === false) return false;
+        if (G.alive[safe] === false) return false;
+        // Si au moins une version est true → vivant
+        if (G.alive[uid] === true || G.alive[safe] === true) return true;
+        // undefined pour les deux = on suppose vivant (pas encore sync)
+        return true;
+      }
+
+      // Helper : normaliser une clé Firebase (remplacer les caractères interdits)
+      function toFirebaseKey(id) {
+        return id ? id.replace(/[.$#\[\]/]/g, "_") : id;
+      }
       const SID = localStorage.getItem("lg_current_salon");
       let IS_HOST = false;
       if (!SID) window.location.href = "accueil.html";
@@ -801,7 +819,12 @@
         } catch(e) {}
         const me = G.players.find((p) => p.id === ME.id);
         G.myRole = me && me.role ? me.role : "villager";
-        G.players.forEach((p) => (G.alive[p.id] = true));
+        G.players.forEach((p) => {
+          G.alive[p.id] = true;
+          // Stocker aussi la version safe Firebase (. → _)
+          const uid_ = p.id.replace(/[.$#\[\]/]/g, "_");
+          if (uid_ !== p.id) G.alive[uid_] = true;
+        });
         if (G.myRole === "thief") {
           // VOLEUR FIX : garantir que les 2 cartes surplus sont TOUJOURS différentes
           let _sr = sal.surplusRoles ? [...sal.surplusRoles] : [];
@@ -1033,11 +1056,10 @@ if (IS_HOST) {
           }
           if (gs.alive) {
             Object.entries(gs.alive).forEach(([id, alive]) => {
-              // Firebase stocke les IDs avec _ à la place de .
-              // On met à jour les deux versions pour que G.alive[ME.id] fonctionne
-              if (G.alive[id] !== undefined) G.alive[id] = alive;
-              const dotId = id.replace(/_/g, ".");
-              if (dotId !== id && G.alive[dotId] !== undefined) G.alive[dotId] = alive;
+              // Stocker les deux versions (Firebase utilise _, le jeu utilise parfois .)
+              G.alive[id] = alive;
+              const safe = toFirebaseKey(id);
+              if (safe !== id) G.alive[safe] = alive;
             });
             renderPanels();
             renderInfoPlayers();
@@ -1301,6 +1323,8 @@ if (IS_HOST) {
                 G.alive[k] = gs.alive[k];
                 const dk = k.replace(/_/g,".");
                 if (dk !== k) G.alive[dk] = gs.alive[k];
+                const uk = k.replace(/[.]/g,"_");
+                if (uk !== k) G.alive[uk] = gs.alive[k];
               });
             }
             if (gs.players) G.players = gs.players;
@@ -1368,30 +1392,46 @@ if (IS_HOST) {
                   G.alive[k] = gs.alive[k];
                   const dk = k.replace(/_/g,".");
                   if (dk !== k) G.alive[dk] = gs.alive[k];
+                  const uk = k.replace(/[.]/g,"_");
+                  if (uk !== k) G.alive[uk] = gs.alive[k];
                 });
               }
 
               function _openActionForMe() {
-                G.forceAction = true;
                 G.actDone = false;
                 G.actTgt = null;
                 G._curStepStart = gs.nightStepStart;
-                if (G.myRole === "witch") playSound("witch");
-                else if (G.myRole === "littlegirl") playSound("littlegirl");
-                else soundYourTurn();
-                showGameNotif("🔔", "C'est votre tour d'agir !", 4000);
-                if (G.myRole === "wolf") {
+
+                if (G.myRole === "wolf" || G.myRole === "whitewolf" || G.myRole === "grandmechant") {
+                  // Loup : ouvrir le chat privé + boutons attaque
                   G.forceAction = false;
+                  G.chatOn = true;
+                  updateChat();
+                  const wp = document.getElementById("wolf-private");
+                  if (wp) wp.style.display = "block";
+                  const wpl = document.getElementById("wolf-private-label");
+                  if (wpl) wpl.style.display = "inline";
+                  const lgl = document.getElementById("littlegirl-spy-label");
+                  if (lgl) lgl.style.display = "none";
+                  playSound("wolf");
                   showGameNotif("🐺", "Chatte avec tes complices puis clique 🐺 Voter !", 5000);
                   const voteBtn = document.getElementById("wolf-vote-btn");
                   if (voteBtn) voteBtn.style.display = "block";
                   const attackBtn = document.getElementById("wolf-attack-btn");
                   if (attackBtn) attackBtn.style.display = "flex";
+                  renderAction();
+                  showActionBar(gs.nightStepDuration);
                 } else {
+                  // Autres rôles : ouvrir le panneau action
+                  G.forceAction = true;
+                  if (G.myRole === "witch") playSound("witch");
+                  else if (G.myRole === "littlegirl") playSound("littlegirl");
+                  else soundYourTurn();
+                  showGameNotif("🔔", "C'est votre tour d'agir !", 4000);
                   goTab("action", document.getElementById("tbtn-action"));
+                  renderAction();
+                  showActionBar(gs.nightStepDuration);
                 }
-                renderAction();
-                showActionBar(gs.nightStepDuration);
               }
 
               if (seq) {
@@ -2355,7 +2395,7 @@ if (IS_HOST) {
         G._curStepStart = stepStart;
         // Inclure alive + players pour que les non-hôtes aient tout en sync
         const _stepAlive = {};
-        Object.keys(G.alive).forEach(k => { _stepAlive[k.replace(/[.]/g,"_")] = G.alive[k]; });
+        Object.keys(G.alive).forEach(k => { _stepAlive[toFirebaseKey(k)] = G.alive[k]; });
         update(ref(db, "salons/" + SID + "/gameState"), {
           nightStepRole: cur.r,
           nightStepLabel: cur.l,
@@ -2820,7 +2860,7 @@ if (IS_HOST) {
         if (vd) vd.textContent = "Choisissez le joueur à éliminer :";
 
         // Ouvrir panneau vote pour les vivants
-        if (G.alive[ME.id] !== false) {
+        if (isAlive(ME.id)) {
           goTab("vote", document.getElementById("tbtn-vote"));
           showGameNotif("🗳️", "C'est l'heure du vote ! Choisissez qui éliminer.", 6000);
           soundVoteStart();
@@ -2880,7 +2920,7 @@ if (IS_HOST) {
           set(ref(db, "salons/" + SID + "/votes"), {});
           // Écrire alive + players pour que les non-hôtes aient tout en sync
           const _voteAlive = {};
-          Object.keys(G.alive).forEach(k => { _voteAlive[k.replace(/[.]/g,"_")] = G.alive[k]; });
+          Object.keys(G.alive).forEach(k => { _voteAlive[toFirebaseKey(k)] = G.alive[k]; });
           update(ref(db, "salons/" + SID + "/gameState"), {
             phase: "vote",
             voteOpen: true,
@@ -2916,9 +2956,9 @@ if (IS_HOST) {
         // Second tour : n'afficher que les ex-æquo (seulement si isRunoff actif)
         const vot = (G.isRunoff && G.runoffCandidates)
           ? G.players.filter((p) => G.runoffCandidates.includes(p.id))
-          : G.players.filter((p) => G.alive[p.id] && p.id !== ME.id);
-        const safeId = ME.id.replace(/\./g, "_");
-        const myVote = G.votes ? G.votes[safeId] : null;
+          : G.players.filter((p) => isAlive(p.id) && p.id !== ME.id);
+        const safeId = ME_SAFE_ID;
+        const myVote = G.votes ? (G.votes[safeId] || G.votes[ME.id]) : null;
         c.innerHTML = vot
           .map((p) => {
             const votesForP = G.votes
@@ -2929,7 +2969,7 @@ if (IS_HOST) {
               (votesForP / Math.max(1, totalVoters)) * 100
             );
             const iSelected = myVote === p.id;
-            const _iAmAlive = G.alive[ME.id] !== false; // undefined = vivant
+            const _iAmAlive = isAlive(ME.id); // vérifie les deux versions de clé
             return `<div class="vote-item${iSelected ? " selected" : ""}"
               onclick="selVote('${p.id}',this)"
               style="${!_iAmAlive ? "pointer-events:none;opacity:0.6" : ""}">
@@ -2959,7 +2999,7 @@ if (IS_HOST) {
           </div>`;
           })
           .join("");
-        const _vbAlive = G.alive[ME.id] !== false;
+        const _vbAlive = isAlive(ME.id);
         document.getElementById("vote-btn").disabled = !myVote || !_vbAlive;
       }
 
@@ -2987,12 +3027,12 @@ if (IS_HOST) {
 
       window.selVote = function (id, el) {
         // alive === false = mort confirmé. undefined = pas encore sync → laisser voter
-        if (G.alive[ME.id] === false) { showNotif("❌ Les morts ne votent pas !"); return; }
+        if (!isAlive(ME.id)) { showNotif("❌ Les morts ne votent pas !"); return; }
         if (!G.voteStarted) { showNotif("⏳ Pas encore l'heure du vote !"); return; }
         if (G.isRunoff && G.runoffCandidates && !G.runoffCandidates.includes(id)) return;
         G.selVote = id;
         G.hasVoted = true;
-        const safeId = ME.id.replace(/[.]/g, "_");
+        const safeId = ME_SAFE_ID;
         // Écrire dans Firebase — tous voient le vote en temps réel
         set(ref(db, "salons/" + SID + "/votes/" + safeId), id)
           .then(() => console.log("[VOTE] ✓", ME.name, "→", id))
@@ -3010,7 +3050,7 @@ if (IS_HOST) {
         const btn = document.getElementById("tbtn-vote");
         if (!btn) return;
         // Les morts n'ont jamais accès au vote
-        if (G.alive && G.alive[ME.id] === false) {
+        if (!isAlive(ME.id)) {
           btn.disabled = true;
           btn.style.opacity = "0.2";
           btn.style.cursor = "not-allowed";
@@ -3033,7 +3073,7 @@ if (IS_HOST) {
       // Ouvrir le vote seulement si c'est la phase de vote
       window.tryOpenVote = function(btn) {
         // Les morts ne peuvent pas voter
-        if (G.alive && G.alive[ME.id] === false) {
+        if (!isAlive(ME.id)) {
           showNotif("❌ Les morts ne votent pas !");
           return;
         }
@@ -3047,14 +3087,14 @@ if (IS_HOST) {
 
       window.castVote = function () {
         if (!G.selVote) return;
-        if (!G.alive[ME.id]) { showNotif("❌ Les morts ne votent pas !"); return; }
+        if (!isAlive(ME.id)) { showNotif("❌ Les morts ne votent pas !"); return; }
         if (G.selVote && !G.alive[G.selVote]) {
           showNotif("❌ Ce joueur est déjà mort !");
           G.selVote = null; return;
         }
         // FIX VOTE : enregistre le vote dans Firebase — modifiable jusqu'à la fin du timer
         // Ne pas verrouiller : le joueur peut rechanger son vote
-        const safeId = ME.id.replace(/\./g, "_");
+        const safeId = ME_SAFE_ID;
         set(ref(db, "salons/" + SID + "/votes/" + safeId), G.selVote);
         showNotif("✅ Vote enregistré — vous pouvez encore changer !");
         // Juste un retour visuel, pas de verrou
@@ -3242,8 +3282,7 @@ if (IS_HOST) {
         const aliveKeys = Object.keys(G.alive).filter(k => G.alive[k] === true);
         const alive = G.players.filter(p => {
           if (p.id === ME.id) return false;
-          // alive[id] === false = mort confirmé, sinon vivant
-          return G.alive[p.id] !== false;
+          return isAlive(p.id);
         });
         const tgts = alive
           .map(
