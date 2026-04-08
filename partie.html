@@ -2281,10 +2281,9 @@ if (IS_HOST) {
         _nightInterval = setInterval(() => {
           countdown--;
           const safe = Math.max(0, countdown);
-          update(ref(db, "salons/" + SID + "/gameState"), {
-            nightStepCountdown: safe,
-            "nightCmd/countdown": safe,
-          });
+          // Mettre à jour les deux champs séparément
+          update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: safe });
+          set(ref(db, "salons/" + SID + "/gameState/nightCmd/countdown"), safe);
           if (safe <= 0) {
             _stopNightInterval();
             // Passer à l'étape suivante après un court délai
@@ -2343,11 +2342,12 @@ if (IS_HOST) {
         addChat(`<img src="${cur.img}" style="width:20px;height:28px;border-radius:3px;vertical-align:middle;margin-right:4px"/> <em>${cur.l} agit dans l'ombre...</em>`, true);
         setPhaseInfo(cur.l + " — " + cur.d);
 
-        // Transition carte puis UI
-        showNightTransition(cur.l + " se réveille…", cur.d, () => {
-          // Démarrer le décompte Firebase APRÈS la transition
-          _startNightCmd(cur, stepKey);
+        // Écrire nightCmd dans Firebase IMMÉDIATEMENT (avant la transition)
+        // Les non-hôtes reçoivent la commande et font leur propre transition
+        _startNightCmd(cur, stepKey);
 
+        // Transition carte puis UI côté hôte
+        showNightTransition(cur.l + " se réveille…", cur.d, () => {
           // UI hôte si c'est son tour
           if (isMe) {
             if (G.myRole === "witch") playSound("witch");
