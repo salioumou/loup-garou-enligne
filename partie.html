@@ -1208,27 +1208,23 @@ if (IS_HOST) {
             _openVoteUI(gs.voteCountdown || 15);
           }
 
-          // ── 10. nightCmd : piloté par l'hôte via _startNightCmd()
-          // L'hôte écrit nightCmd.stepKey à chaque nouvelle étape
-          // Les non-hôtes détectent le changement de stepKey et ouvrent leur panneau
-          if (gs.phase === "night" && gs.nightCmd && gs.nightCmd.stepKey) {
-            const cmd = gs.nightCmd;
-            const stepKey = cmd.stepKey;
-
-            // Anti-doublon : traiter chaque stepKey une seule fois
+          // ── 10. Étape de nuit pour les NON-HÔTES
+          if (gs.phase === "night" && gs.nightStepLabel && gs.nightStepStart && gs.nightStartTs) {
+            const stepKey = gs.nightStartTs + "|" + gs.nightStepStart + "|" + gs.nightStepLabel;
             if (stepKey !== _lastNightStepKey) {
               _lastNightStepKey = stepKey;
 
-              // Bandeau chrono pour TOUS
-              if (window._showNightTimer) {
-                window._showNightTimer(cmd.label, 0, cmd.countdown || 15, cmd.img);
+              // Bandeau timer pour TOUS (non-hôtes lisent nightStepCountdown)
+              if (!IS_HOST && window._showNightTimer) {
+                const seq2 = (typeof NIGHT_SEQ !== "undefined") ? NIGHT_SEQ.find(s => s.l === gs.nightStepLabel) : null;
+                window._showNightTimer(gs.nightStepLabel, gs.nightStepStart, gs.nightStepDuration, seq2 ? seq2.img : null);
               }
 
-              // NON-HÔTES : ouvrir le bon panneau
+              // Non-hôtes : ouvrir le panneau si c'est leur tour
               if (!IS_HOST) {
-                const isMyStep = cmd.role === G.myRole;
-                const isLG = G.myRole === "littlegirl" && cmd.role === "wolf";
-                const seq = (typeof NIGHT_SEQ !== "undefined") ? NIGHT_SEQ.find(s => s.l === cmd.label) : null;
+                const isMyStep = gs.nightStepRole === G.myRole;
+                const isLG = G.myRole === "littlegirl" && gs.nightStepRole === "wolf";
+                const seq = (typeof NIGHT_SEQ !== "undefined") ? NIGHT_SEQ.find(s => s.l === gs.nightStepLabel) : null;
 
                 const _doOpen = () => {
                   G.actDone = false; G.actTgt = null;
@@ -1249,32 +1245,22 @@ if (IS_HOST) {
                     goTab("action", document.getElementById("tbtn-action"));
                   }
                   renderAction();
-                  showActionBar(cmd.countdown || 15);
+                  showActionBar(gs.nightStepDuration || 15);
                 };
 
                 if (seq) {
-                  showNightTransition(cmd.label + " se réveille…", cmd.desc || "", () => {
+                  showNightTransition(gs.nightStepLabel + " se réveille…", seq.d || "", () => {
                     if (isMyStep) _doOpen();
                     else if (isLG) {
                       const _wp2 = document.getElementById("wolf-private"); if (_wp2) _wp2.style.display = "block";
                       const _lgl = document.getElementById("littlegirl-spy-label"); if (_lgl) _lgl.style.display = "inline";
                       const _wpl2 = document.getElementById("wolf-private-label"); if (_wpl2) _wpl2.style.display = "none";
                     }
-                  }, cmd.img);
+                  }, seq.img);
                 } else if (isMyStep) {
                   _doOpen();
                 }
               }
-            }
-
-            // Quand countdown=0 → fermer l'UI pour les non-hôtes
-            if (cmd.countdown === 0 && !IS_HOST) {
-              const _acb2 = document.getElementById("action-cbar"); if (_acb2) _acb2.style.display = "none";
-              G.forceAction = false; G.actDone = true;
-              const _wp3 = document.getElementById("wolf-private"); if (_wp3) _wp3.style.display = "none";
-              const _ab3 = document.getElementById("wolf-attack-btn"); if (_ab3) _ab3.style.display = "none";
-              G.chatOn = false; updateChat();
-              goTab("village", null);
             }
           }
 
@@ -2245,71 +2231,14 @@ if (IS_HOST) {
         });
       }
 
-      // ─── COMPTEUR NUIT GLOBAL ───────────────────────────────────────────
-      // L'hôte gère un seul setInterval pour toute la nuit.
-      // Il écrit nightCmd dans Firebase chaque seconde.
-      // Les non-hôtes lisent nightCmd et réagissent.
-      let _nightInterval = null;
-
-      function _stopNightInterval() {
-        if (_nightInterval) { clearInterval(_nightInterval); _nightInterval = null; }
-      }
-
-      // Écrire la commande courante dans Firebase + démarrer le décompte
-      function _startNightCmd(cur, stepKey) {
-        _stopNightInterval();
-        const alive = {};
-        Object.keys(G.alive).forEach(k => { alive[toFirebaseKey(k)] = G.alive[k]; });
-        let countdown = cur.s;
-
-        // Écrire la commande initiale dans Firebase
-        update(ref(db, "salons/" + SID + "/gameState"), {
-          nightCmd: {
-            role: cur.r,
-            label: cur.l,
-            desc: cur.d,
-            img: cur.img,
-            countdown: countdown,
-            stepKey: stepKey,
-          },
-          alive: alive,
-          players: G.players,
-          nightStepCountdown: countdown, // pour le bandeau timer
-        });
-
-        // Décompte chaque seconde
-        _nightInterval = setInterval(() => {
-          countdown--;
-          const safe = Math.max(0, countdown);
-          // Mettre à jour les deux champs séparément
-          update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: safe });
-          set(ref(db, "salons/" + SID + "/gameState/nightCmd/countdown"), safe);
-          if (safe <= 0) {
-            _stopNightInterval();
-            // Passer à l'étape suivante après un court délai
-            setTimeout(() => {
-              G.seqIdx++;
-              G.actDone = false;
-              nextNightStep();
-            }, 500);
-          }
-        }, 1000);
-      }
-
       function nextNightStep() {
-        if (G.seqIdx >= G.activeSeq.length) {
-          resolveNight();
-          return;
-        }
+        if (G.seqIdx >= G.activeSeq.length) { resolveNight(); return; }
         const cur = G.activeSeq[G.seqIdx];
         updateNightSteps();
-
-        // Clé unique pour cette étape
-        const stepKey = (G._currentNightTs || Date.now()) + "_" + G.seqIdx + "_" + cur.r;
-
-        // UI hôte : chat loup, etc.
         const isMe = G.myRole === cur.r;
         const isLG = G.myRole === "littlegirl" && cur.r === "wolf";
+
+        // UI locale hôte (chat loup, etc.)
         if (isMe && G.myRole === "wolf") {
           G.chatOn = true;
           document.getElementById("wolf-private").style.display = "block";
@@ -2327,60 +2256,56 @@ if (IS_HOST) {
         }
         updateChat();
 
-        // Son
-        const ROL_SND = {
-          seer:"voyante", voyantebavarde:"voyantebavarde", savior:"salvateur",
-          wolf:"wolf", witch:"witch", hunter:"chasseur", cupid:"cupidon",
-          corbeau:"corbeau", joueurdeflute:"flute", ancien:"ancien",
-          idiot:"idiot", montreurdours:"grognement", thief:"voleur",
-          enfantsauvage:"enfantsauvage", whitewolf:"wolf", grandmechant:"wolf",
-          littlegirl:"littlegirl", chienloup:"chienloup", boucemissaire:"boucemissaire"
-        };
-        broadcastSound(ROL_SND[cur.r] || "");
+        // Écrire dans Firebase pour les non-hôtes
+        const stepStart = Date.now();
+        G._curStepStart = stepStart;
+        const alive = {};
+        Object.keys(G.alive).forEach(k => { alive[toFirebaseKey(k)] = G.alive[k]; });
+        update(ref(db, "salons/" + SID + "/gameState"), {
+          nightStepRole: cur.r,
+          nightStepLabel: cur.l,
+          nightStepDuration: cur.s,
+          nightStepStart: stepStart,
+          nightStartTs: G._currentNightTs || stepStart,
+          nightStepCountdown: cur.s,
+          alive: alive,
+          players: G.players,
+        });
 
-        // Message chat
+        // Son + message
+        const ROL_SND = { seer:"voyante", voyantebavarde:"voyantebavarde", savior:"salvateur", wolf:"wolf", witch:"witch", hunter:"chasseur", cupid:"cupidon", corbeau:"corbeau", joueurdeflute:"flute", ancien:"ancien", idiot:"idiot", montreurdours:"grognement", thief:"voleur", enfantsauvage:"enfantsauvage", whitewolf:"wolf", grandmechant:"wolf", littlegirl:"littlegirl", chienloup:"chienloup", boucemissaire:"boucemissaire" };
+        broadcastSound(ROL_SND[cur.r] || "");
         addChat(`<img src="${cur.img}" style="width:20px;height:28px;border-radius:3px;vertical-align:middle;margin-right:4px"/> <em>${cur.l} agit dans l'ombre...</em>`, true);
         setPhaseInfo(cur.l + " — " + cur.d);
 
-        // Écrire nightCmd dans Firebase IMMÉDIATEMENT (avant la transition)
-        // Les non-hôtes reçoivent la commande et font leur propre transition
-        _startNightCmd(cur, stepKey);
+        // Démarrer le bandeau timer (écrit nightStepCountdown chaque seconde)
+        if (window._showNightTimer) window._showNightTimer(cur.l, stepStart, cur.s, cur.img);
 
-        // Transition carte puis UI côté hôte
+        // Transition + UI hôte
         showNightTransition(cur.l + " se réveille…", cur.d, () => {
-          // UI hôte si c'est son tour
           if (isMe) {
             if (G.myRole === "witch") playSound("witch");
             else if (G.myRole === "littlegirl") playSound("littlegirl");
             else soundYourTurn();
             showGameNotif("🔔", "C'est votre tour d'agir !", 3000);
-            G.actDone = false;
-            G.forceAction = true;
+            G.actDone = false; G.forceAction = true;
             if (G.myRole === "wolf") {
               G.forceAction = false;
               showGameNotif("🐺", "Chatte avec tes complices puis clique 🐺 Voter !", 5000);
-              const vb2 = document.getElementById("wolf-vote-btn");
-              if (vb2) vb2.style.display = "block";
-              const ab2 = document.getElementById("wolf-attack-btn");
-              if (ab2) ab2.style.display = "flex";
+              const vb2 = document.getElementById("wolf-vote-btn"); if (vb2) vb2.style.display = "block";
+              const ab2 = document.getElementById("wolf-attack-btn"); if (ab2) ab2.style.display = "flex";
             } else {
               goTab("action", document.getElementById("tbtn-action"));
             }
             renderAction();
-          } else {
-            // Bot Voyante Bavarde
-            if (cur.r === "voyantebavarde") {
-              const vbBot = G.players.find(p => p.role === "voyantebavarde" && p.isBot && isAlive(p.id));
-              if (vbBot) {
-                const targets = G.players.filter(p => p.id !== vbBot.id && isAlive(p.id));
-                const target = targets[Math.floor(Math.random() * targets.length)];
-                if (target) {
-                  const r2 = RDATA[target.role] || RDATA.villager;
-                  const vbMsg = `👁️ <strong>La Voyante Bavarde</strong> révèle : <strong>${r2.n}</strong> — ${r2.t==="wolves"?"🐺 Loup":"✅ Village"}`;
-                  set(ref(db, "salons/" + SID + "/gameChat/" + Date.now() + "_vb"), {
-                    text: vbMsg, sys: true, author: "Système", uid: ME.id, t: Date.now(),
-                  });
-                }
+          } else if (cur.r === "voyantebavarde") {
+            const vbBot = G.players.find(p => p.role === "voyantebavarde" && p.isBot && isAlive(p.id));
+            if (vbBot) {
+              const targets = G.players.filter(p => p.id !== vbBot.id && isAlive(p.id));
+              const tgt = targets[Math.floor(Math.random() * targets.length)];
+              if (tgt) {
+                const r2 = RDATA[tgt.role] || RDATA.villager;
+                set(ref(db, "salons/" + SID + "/gameChat/" + Date.now() + "_vb"), { text: `👁️ <strong>La Voyante Bavarde</strong> révèle : <strong>${r2.n}</strong> — ${r2.t==="wolves"?"🐺 Loup":"✅ Village"}`, sys: true, author: "Système", uid: ME.id, t: Date.now() });
               }
             }
           }
@@ -2419,31 +2344,20 @@ if (IS_HOST) {
         });
       }
 
-      // advNight : appelé par le joueur quand il a terminé son action
-      // L'hôte avance via _nightInterval, mais advNight peut accélérer si action faite
       function advNight() {
-        // Nettoyer l'UI
-        const _el = (id) => document.getElementById(id);
+        const _el = id => document.getElementById(id);
         if (_el("action-cbar")) _el("action-cbar").style.display = "none";
-        G.forceAction = false;
-        G.actDone = true;
-        G.actTgt = null;
+        G.forceAction = false; G.actDone = true; G.actTgt = null;
         goTab("village", null);
         const ab = _el("wolf-attack-btn"); if(ab) ab.style.display = "none";
-        const vb2 = _el("wolf-vote-btn"); if(vb2) vb2.style.display = "none";
+        const vb3 = _el("wolf-vote-btn"); if(vb3) vb3.style.display = "none";
         const wp = _el("wolf-private"); if(wp) wp.style.display = "none";
-        G.chatOn = false;
-        updateChat();
-
+        G.chatOn = false; updateChat();
         if (IS_HOST) {
-          // Avancer immédiatement à l'étape suivante
-          _stopNightInterval();
           if (window._hideNightTimer) window._hideNightTimer();
-          G.seqIdx++;
-          G.actDone = false;
+          G.seqIdx++; G.actDone = false;
           setTimeout(nextNightStep, 400);
         }
-        // Non-hôte : rien à faire, l'hôte contrôle le timing
       }
 
       function resolveNight() {
@@ -4825,12 +4739,9 @@ if (IS_HOST) {
         if (_nightCountdownUnsub) { _nightCountdownUnsub(); _nightCountdownUnsub = null; }
 
         if (IS_HOST) {
-          // L'hôte écrit nightStepCountdown chaque seconde dans Firebase
-          // Quand rem=0 : appeler advNight() pour avancer à l'étape suivante
           let rem = duration;
           let _advCalled = false;
           _renderNightBanner(label, rem, duration, roleImg);
-          update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: rem });
           _nightTimerInterval = setInterval(() => {
             rem--;
             const remSafe = Math.max(0, rem);
