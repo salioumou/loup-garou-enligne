@@ -2373,14 +2373,14 @@ if (IS_HOST) {
         G.chatOn = false; updateChat();
 
         if (IS_HOST) {
-          // Arrêter le timer et signaler aux non-hôtes de fermer leur UI
           if (window._hideNightTimer) window._hideNightTimer();
-          // nightStepCountdown=0 → ferme showActionBar des non-hôtes
+          // Signaler aux non-hôtes de fermer leur UI
           update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+          G._advancedThisStep = true; // empêche double appel depuis timer
           G.seqIdx++;
           G.actDone = false;
           setTimeout(() => {
-            _advNightPending = false;
+            G._advancedThisStep = false;
             nextNightStep();
           }, 400);
         }
@@ -3506,22 +3506,22 @@ if (IS_HOST) {
             return;
           }
           const r = RDATA[t.role] || RDATA.villager;
-          // FIX VOYANTE : message privé local uniquement (pas dans Firebase)
-          // La voyante NORMALE ne révèle rien publiquement — contrairement à la Bavarde
-          const seerMsgDiv = document.createElement("div");
-          seerMsgDiv.className = "msg sys";
-          seerMsgDiv.innerHTML = "🔮 <strong>" + t.name + "</strong> est " +
-            (r.t === "wolves"
-              ? "<span style='color:#be6d6d'>🐺 un Loup-Garou !</span>"
-              : "<span style='color:#6dbe6d'>✅ du côté du Village.</span>");
+          // Voyante : message privé local avec rôle EXACT + camp
+          const seerDiv = document.createElement("div");
+          seerDiv.className = "msg sys";
+          seerDiv.innerHTML = `🔮 <strong>${t.name}</strong> est
+            <span style="display:inline-flex;align-items:center;gap:6px;margin-left:4px;
+              background:rgba(0,0,0,0.3);border-radius:8px;padding:3px 8px;
+              border:1px solid ${r.t==="wolves"?"#be6d6d":"rgba(201,164,76,0.4)"}">
+              ${r.img ? `<img src="${r.img}" style="width:20px;height:27px;border-radius:3px;object-fit:cover"/>` : ""}
+              <strong style="color:${r.t==="wolves"?"#be6d6d":"var(--accent)"}">${r.n}</strong>
+              <span style="font-size:0.75rem;color:${r.t==="wolves"?"#be6d6d":"#6dbe6d"}">
+                ${r.t==="wolves"?"🐺 Loup":"✅ Village"}
+              </span>
+            </span>`;
           const gc = document.getElementById("game-chat");
-          if (gc) { gc.appendChild(seerMsgDiv); gc.scrollTop = gc.scrollHeight; }
-          addJournal(
-            "Voyante : " +
-              t.name +
-              " → " +
-              (r.t === "wolves" ? "Loup" : "Village")
-          );
+          if (gc) { gc.appendChild(seerDiv); gc.scrollTop = gc.scrollHeight; }
+          addJournal("Voyante : " + t.name + " → " + r.n + " (" + (r.t==="wolves"?"Loup":"Village") + ")");
         } else if (type === "wsave") {
           G.savedWitch = true;
           G.potions.save = false;
@@ -4785,7 +4785,11 @@ if (IS_HOST) {
               _advCalled = true;
               clearInterval(_nightTimerInterval);
               _nightTimerInterval = null;
-              setTimeout(() => advNight(), 400);
+              // Ne pas avancer si le joueur hôte a déjà agi (advNight déjà appelé)
+              if (!G.seqIdx || !G._advancedThisStep) {
+                G._advancedThisStep = true;
+                setTimeout(() => advNight(), 400);
+              }
             }
           }, 1000);
         } else {
