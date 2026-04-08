@@ -805,7 +805,7 @@
         }
         const sal = snap.val();
         IS_HOST = sal.host === ME.id;
-        G.players = sal.players;
+        G.players = sal.players || [];
         G.allowBots = sal.config?.allowBots !== false;
         if (sal.config?.voteDuration) localStorage.setItem("lg_vote_duration", sal.config.voteDuration);
         G.dayDuration = sal.config?.dayDuration || 180;
@@ -861,16 +861,22 @@
           showReveal();
           setTimeout(() => showGameNotif("🐺", "La partie a commencé ! Regardez votre rôle secret.", 6000), 1500);
         } else {
+          // FIX: afficher l'écran de jeu directement lors d'une reconnexion
+          document.getElementById("sc-reveal").style.display = "none";
+          document.getElementById("sc-game").style.display = "block";
           showGameNotif("🔄", "Reconnexion en cours…", 3000);
         }
         if (existingState.exists()) {
           const gs = existingState.val();
+          // FIX: préférer gs.players (mis à jour par l'hôte) à sal.players (peut être périmé)
+          if (gs.players && gs.players.length > 0) G.players = gs.players;
           // Restaurer l'état complet
           if (gs.alive)
             Object.entries(gs.alive).forEach(([id, alive]) => {
-              if (G.alive[id] !== undefined) G.alive[id] = alive;
+              // FIX: toujours écrire - ne pas vérifier si la clé existait déjà
+              G.alive[id] = alive;
               const dotId = id.replace(/_/g, ".");
-              if (dotId !== id && G.alive[dotId] !== undefined) G.alive[dotId] = alive;
+              if (dotId !== id) G.alive[dotId] = alive;
             });
           if (gs.phase) G.phase = gs.phase;
           if (gs.turn) G.turn = gs.turn;
@@ -878,6 +884,13 @@
           if (gs.lovers) G.lovers = gs.lovers || [];
           if (gs.fluteTargets) G.fluteTargets = gs.fluteTargets || [];
           if (gs.corbeauBonus) G.corbeauBonus = gs.corbeauBonus || {};
+          // FIX: restaurer tous les états de jeu manquants lors de la reconnexion
+          if (gs.charmedPlayers) G.charmedPlayers = gs.charmedPlayers || [];
+          if (gs.wildChildModel) G.wildChildModel = gs.wildChildModel;
+          if (gs.ancienKilled) G.ancienKilled = gs.ancienKilled;
+          if (gs.ancienLives !== undefined) G.ancienLives = gs.ancienLives;
+          if (gs.grandMechantUsed) G.grandMechantUsed = gs.grandMechantUsed;
+          if (gs.saviorTarget) G.saviorTarget = gs.saviorTarget;
           if (gs.winner) {
             endGame(gs.winner, gs.winDesc || "");
             return;
@@ -885,6 +898,9 @@
           // Joueur mort → mode spectateur
           if (G.alive[ME.id] === false) {
             G.spectator = true;
+            // FIX: déclencher enterSpectatorMode immédiatement lors de la reconnexion
+            // (onValue le déclenchera aussi mais le guard _spectatorModeEntered l'empêchera de doubler)
+            setTimeout(() => enterSpectatorMode(), 100);
           }
           renderPanels();
           renderInfoPlayers();
@@ -927,36 +943,56 @@
               updateChat();
               document.getElementById("night-panel").style.display = "none";
               if (!G.voteStarted) {
-                if (IS_HOST) startVote();
-                else {
-                  // Non-host: démarrer listener votes directement
-                  G.voteStarted = true;
-                  G.hasVoted = false;
-                  lockVoteBtn(false);
-                  showVoteBadge();
+                // FIX: ne pas appeler startVote() (recrée un timer) - ouvrir directement l'UI
+                G.voteStarted = true;
+                G._resolvingVotes = false;
+                G.isRunoff = !!(gs.runoffTs);
+                G.runoffCandidates = gs.runoffCandidates || null;
+                G.hasVoted = false;
+                lockVoteBtn(false);
+                showVoteBadge();
+                renderVoteList();
+                if (isAlive(ME.id)) goTab("vote", document.getElementById("tbtn-vote"));
+                const _vcEl = document.getElementById("vote-cbar");
+                if (_vcEl) _vcEl.style.display = "block";
+                // Écouter les votes en temps réel
+                if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+                G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"), (snap) => {
+                  G.votes = snap.exists() ? snap.val() : {};
                   renderVoteList();
-                  goTab("vote", document.getElementById("tbtn-vote"));
-                  document.getElementById("vote-cbar").style.display = "block";
-                  G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"), (snap) => {
-                    G.votes = snap.exists() ? snap.val() : {};
-                    renderVoteList();
-                    renderVoteSummary();
-                  });
-                  // Reconnexion vote : écouter voteCountdown Firebase
-                  {
-                    let _vcR = null;
-                    _vcR = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
-                      if (!snap.exists()) return;
-                      const r = snap.val();
-                      const m2=Math.floor(r/60), s2=r%60;
-                      const ts = m2+":"+(s2<10?"0":"")+s2;
-                      const _vt=document.getElementById("vote-time"); if(_vt) _vt.textContent=ts;
-                      const _ct=document.getElementById("cbar-time"); if(_ct) _ct.textContent=ts;
-                      const _vf=document.getElementById("vote-fill"); if(_vf) _vf.style.width=Math.round(r/15*100)+"%";
-                      const _cf=document.getElementById("cbar-fill"); if(_cf) _cf.style.width=Math.round(r/15*100)+"%";
-                      if (r<=0) { if(_vcR) _vcR(); }
-                    });
+                  renderVoteSummary();
+                  // Résolution anticipée pour l'hôte reconnecté - FIX: utiliser isAlive()
+                  if (IS_HOST && G.voteStarted && !G._resolvingVotes) {
+                    const alivePlayers = G.players.filter(p => isAlive(p.id));
+                    if (Object.keys(G.votes).length >= alivePlayers.length && alivePlayers.length > 0) {
+                      G._resolvingVotes = true;
+                      if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+                      resolveVotes();
+                    }
                   }
+                });
+                // Reconnexion vote : écouter voteCountdown Firebase
+                {
+                  let _vcR = null;
+                  _vcR = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
+                    if (!snap.exists()) return;
+                    const r = snap.val();
+                    const m2=Math.floor(r/60), s2=r%60;
+                    const ts = m2+":"+(s2<10?"0":"")+s2;
+                    const _vt=document.getElementById("vote-time"); if(_vt) _vt.textContent=ts;
+                    const _ct=document.getElementById("cbar-time"); if(_ct) _ct.textContent=ts;
+                    const _vf=document.getElementById("vote-fill"); if(_vf) _vf.style.width=Math.round(r/15*100)+"%";
+                    const _cf=document.getElementById("cbar-fill"); if(_cf) _cf.style.width=Math.round(r/15*100)+"%";
+                    if (r<=0) {
+                      if(_vcR) { _vcR(); _vcR = null; }
+                      // FIX: si l'hôte se reconnecte après la fin du chrono, résoudre immédiatement
+                      if (IS_HOST && !G._resolvingVotes) {
+                        G._resolvingVotes = true;
+                        if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+                        resolveVotes();
+                      }
+                    }
+                  });
                 }
               }
             }
@@ -979,13 +1015,33 @@
               // Trouver l'index de l'étape en cours
               const curIdx = G.activeSeq.findIndex(s => s.r === gs.nightStepRole);
               if (curIdx !== -1) G.seqIdx = curIdx;
-              if (IS_HOST) addChat("🔄 <em>L'hôte s'est reconnecté — reprise de la partie.</em>", true);
+              addChat("🔄 <em>L'hôte s'est reconnecté — reprise de la partie.</em>", true);
+              // FIX: relancer nextNightStep pour que l'hôte reprenne le contrôle de la nuit
+              renderNightSteps();
+              setTimeout(() => nextNightStep(), 1000);
             }
           }
         }
 
         // ✅ init() terminé : les données Firebase sont chargées
         G._initDone = true;
+
+        // FIX: écouter les changements d'hôte pour mettre à jour IS_HOST en temps réel
+        onValue(ref(db, "salons/" + SID + "/host"), (snap) => {
+          if (!snap.exists()) return;
+          const newHostId = snap.val();
+          const wasHost = IS_HOST;
+          IS_HOST = (newHostId === ME.id);
+          if (IS_HOST !== wasHost) {
+            const hBtn = document.getElementById("host-panel-btn");
+            if (IS_HOST) {
+              if (hBtn) hBtn.style.display = "flex";
+            } else {
+              if (hBtn) hBtn.style.display = "none";
+            }
+          }
+        });
+
         // ── Heartbeat hôte pendant la partie ──────────────────────────
 if (IS_HOST) {
   const _sendGameHeartbeat = () =>
@@ -1018,7 +1074,10 @@ if (IS_HOST) {
       // Prendre le joueur avec l'ID le plus petit (déterministe pour éviter conflits)
       alivePlayers.sort((a,b) => a.id.localeCompare(b.id));
       const newHost = alivePlayers[0];
-      if (newHost && newHost.id === ME.id) {
+      if (newHost && newHost.id === ME.id && !IS_HOST) {
+        // FIX: vérifier atomiquement que l'hôte n'a pas déjà changé depuis le dernier check
+        const freshSnap = await get(ref(db, "salons/" + SID + "/host"));
+        if (freshSnap.exists() && freshSnap.val() !== ME.id) return; // quelqu'un d'autre est déjà hôte
         // C'est moi le nouveau host !
         IS_HOST = true;
         localStorage.setItem("lg_is_host", "true");
@@ -1027,7 +1086,7 @@ if (IS_HOST) {
         if (hBtn) hBtn.style.display = "flex";
         addChat("🎖️ <em>" + ME.name + " est maintenant l'hôte (transfert automatique).</em>", true);
         if (banner) banner.style.display = "none";
-      } else if (newHost) {
+      } else if (newHost && newHost.id !== ME.id) {
         if (banner) {
           banner.style.display = "block";
           banner.innerHTML = "🔄 Transfert de l'hôte vers " + newHost.name + "…";
@@ -1054,6 +1113,7 @@ if (IS_HOST) {
           // ── 1. Mettre à jour G.alive depuis Firebase (TOUJOURS, sans condition)
           if (gs.alive) {
             Object.entries(gs.alive).forEach(([k, v]) => {
+              // FIX: toujours mettre à jour G.alive sans vérifier l'existence préalable
               G.alive[k] = v;
               // Stocker aussi la version avec . (Firebase utilise _ à la place de .)
               const dot = k.replace(/_/g, ".");
@@ -1067,8 +1127,10 @@ if (IS_HOST) {
             renderInfoPlayers();
           }
 
-          // ── 2. Synchroniser players si fourni
+          // ── 2. Synchroniser players et turn si fournis
           if (gs.players) G.players = gs.players;
+          // FIX: synchroniser G.turn pour les non-hôtes dès que Firebase l'envoie
+          if (gs.turn && gs.turn > G.turn) { G.turn = gs.turn; updateUI(); }
 
           // ── 3. Sons Firebase
           if (gs.soundEvent && gs.soundTs && gs.soundTs !== _lastSoundTs2) {
@@ -1079,6 +1141,30 @@ if (IS_HOST) {
           // ── 4. Victime pour la sorcière
           if (gs.victimForWitch && G.myRole === "witch" && !G.victim) {
             G.victim = gs.victimForWitch;
+          }
+
+          // ── 4b. Protection du Salvateur (non-hôte → hôte)
+          if (gs.saviorTarget && IS_HOST && !G.saviorTarget) {
+            G.saviorTarget = gs.saviorTarget;
+          }
+
+          // ── 4c. Victime des loups (non-hôte loup → hôte) pour resolveNight
+          if (gs.wolfVictim && IS_HOST && !G.victim) {
+            G.victim = gs.wolfVictim;
+          }
+
+          // ── 4d. Bonus Corbeau (non-hôte corbeau → hôte)
+          if (gs.corbeauBonus && IS_HOST) {
+            Object.entries(gs.corbeauBonus).forEach(([id, bonus]) => {
+              G.corbeauBonus[id] = bonus;
+            });
+          }
+
+          // ── 4e. Décisions de la Sorcière non-hôte → hôte
+          if (IS_HOST) {
+            if (gs.witchSaved && !G.savedWitch) G.savedWitch = true;
+            if (gs.witchKillTarget && !G.witchKill) G.witchKill = gs.witchKillTarget;
+            if (gs.grandMechantVictim && !G.grandMechantVictim) G.grandMechantVictim = gs.grandMechantVictim;
           }
 
           // ── 5. Fin de partie
@@ -1109,6 +1195,8 @@ if (IS_HOST) {
             goTab("village", null);
             if (!vr.eliminated) {
               if (IS_HOST) addChat("⏰ <em>Personne n'a voté — la nuit tombe.</em>", true);
+              // FIX: l'hôte runNight() écrit phase:"night" dans Firebase → les non-hôtes
+              // le liront via le handler phase (section 8) et appelleront runNight() eux-mêmes
               if (IS_HOST) setTimeout(() => { if (!G.gameEnded) runNight(); }, 800);
               return;
             }
@@ -1127,9 +1215,11 @@ if (IS_HOST) {
               }
               renderPanels(); renderInfoPlayers();
               showDeathScreen(t, "éliminé par le vote du village", () => {
+                // FIX: seul l'hôte orchestre la suite. Les non-hôtes attendent phase:night via Firebase.
+                if (!IS_HOST) return;
                 if (!G.gameEnded && !checkWin()) {
-                  if (t.role === "hunter" && !t.powerLost) fireHunter(t, () => { if (IS_HOST) runNight(); });
-                  else if (IS_HOST) runNight();
+                  if (t.role === "hunter" && !t.powerLost) fireHunter(t, () => { runNight(); });
+                  else runNight();
                 }
               });
             });
@@ -1151,8 +1241,7 @@ if (IS_HOST) {
               clearInterval(G.ivals.vote);
               goTab("village", null);
               G.voteStarted = false;
-              G._nightRunning = false;
-              // Non-hôte : déclencher runNight
+              // Non-hôte : déclencher runNight seulement si pas déjà en cours
               if (!IS_HOST && !G._nightRunning) {
                 G._nightRunning = true;
                 _loadSoundsJs(function() { if (!musicMuted) startNightMusic(); });
@@ -1164,6 +1253,8 @@ if (IS_HOST) {
               G.chatOn = true;
               updateChat();
               G.voteStarted = false;
+              // FIX: synchroniser G.turn depuis Firebase pour les non-hôtes
+              if (gs.turn && gs.turn !== G.turn) { G.turn = gs.turn; updateUI(); }
               const _npD = document.getElementById("night-panel");
               if (_npD) _npD.style.display = "none";
               const _wpD = document.getElementById("wolf-private");
@@ -1276,9 +1367,8 @@ if (IS_HOST) {
               });
               renderPanels(); renderInfoPlayers();
               showNightBilan(deadList, () => {
-                if (!checkWin()) {
-                  _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
-                }
+                // FIX: checkWin() ne fait rien pour les non-hôtes, juste lancer la musique
+                _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
               });
             }
           }
@@ -1290,18 +1380,52 @@ if (IS_HOST) {
             G.selVote = null;
             G.hasVoted = false;
             G.votes = {};
+            G._resolvingVotes = false; // FIX: réinitialiser le verrou pour le second tour
             lockVoteBtn(false);
+            showVoteBadge();
             if (G.voteListener) { G.voteListener(); G.voteListener = null; }
             G.voteListener = onValue(ref(db, "salons/" + SID + "/votes"),
-              (snap) => { G.votes = snap.exists() ? snap.val() : {}; renderVoteList(); renderVoteSummary(); }
+              (snap) => {
+                G.votes = snap.exists() ? snap.val() : {};
+                renderVoteList();
+                renderVoteSummary();
+                // FIX: résolution anticipée pour le second tour aussi - utiliser isAlive()
+                if (IS_HOST && G.isRunoff && !G._resolvingVotes) {
+                  const alivePlayers = G.players.filter(p => isAlive(p.id));
+                  if (Object.keys(G.votes).length >= alivePlayers.length && alivePlayers.length > 0) {
+                    G._resolvingVotes = true;
+                    if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+                    resolveVotes();
+                  }
+                }
+              }
             );
             renderVoteList();
-            goTab("vote", document.getElementById("tbtn-vote"));
+            if (isAlive(ME.id)) {
+              goTab("vote", document.getElementById("tbtn-vote"));
+              showGameNotif("⚖️", "Égalité ! Second tour — votez à nouveau.", 5000);
+            }
             const _vcRO = document.getElementById("vote-cbar");
             if (_vcRO) _vcRO.style.display = "block";
             const _vdRO = document.getElementById("vote-desc");
             if (_vdRO) _vdRO.textContent = "⚖️ Second tour — choisissez parmi les ex-æquo :";
-            // Chrono second tour
+            // FIX: l'hôte démarre le chrono du second tour et écrit voteCountdown
+            if (IS_HOST) {
+              let _runoffRem = 15;
+              clearInterval(G.ivals.vote);
+              G.ivals.vote = setInterval(() => {
+                _runoffRem--;
+                update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: Math.max(0, _runoffRem) });
+                if (_runoffRem <= 0) {
+                  clearInterval(G.ivals.vote);
+                  if (G._resolvingVotes) return;
+                  G._resolvingVotes = true;
+                  if (G.voteListener) { G.voteListener(); G.voteListener = null; }
+                  resolveVotes();
+                }
+              }, 1000);
+            }
+            // Chrono second tour (tous les clients lisent Firebase)
             let _vcR3 = null;
             _vcR3 = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
               if (!snap.exists()) return;
@@ -1309,13 +1433,13 @@ if (IS_HOST) {
               const m2=Math.floor(r/60), s2=r%60;
               const ts = m2+":"+(s2<10?"0":"")+s2;
               const _vt=document.getElementById("vote-time"); if(_vt) _vt.textContent=ts;
+              const _ct=document.getElementById("cbar-time"); if(_ct) _ct.textContent=ts;
               const _cf=document.getElementById("cbar-fill"); if(_cf) _cf.style.width=Math.round(r/15*100)+"%";
               const _vf=document.getElementById("vote-fill"); if(_vf) _vf.style.width=Math.round(r/15*100)+"%";
               if (r <= 0) {
                 if (_vcR3) { _vcR3(); _vcR3 = null; }
                 if (_vcRO) _vcRO.style.display = "none";
                 if (G.voteListener) { G.voteListener(); G.voteListener = null; }
-                if (IS_HOST) resolveVotes();
               }
             });
           }
@@ -1373,6 +1497,9 @@ if (IS_HOST) {
       }
 
       function getAvatarHtml(player, size = 32) {
+        if (player.avatarUrl) {
+          return `<img src="${player.avatarUrl}" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;object-position:center;flex-shrink:0" onerror="this.outerHTML='<div class=\\'avatar\\' style=\\'width:${size}px;height:${size}px;font-size:${Math.round(size*0.4)}px;flex-shrink:0\\'>${player.name[0].toUpperCase()}</div>'"/>`;
+        }
         return `<div class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(
           size * 0.4
         )}px;flex-shrink:0">${player.name[0].toUpperCase()}</div>`;
@@ -2153,6 +2280,7 @@ if (IS_HOST) {
         G.victim = null;
         G.savedWitch = false;
         G.witchKill = null;
+        G.saviorTarget = null; // FIX: réinitialiser la protection du Salvateur chaque nuit
         G.grandMechantUsed = false;
         G.grandMechantVictim = null;
         G.fluteTargets = [];
@@ -2165,7 +2293,7 @@ if (IS_HOST) {
         // FIX double msg : seul l'hôte écrit les messages d'ambiance
         if (IS_HOST) setTimeout(() => addChat(`🌙 <em>${ambMsg}</em>`, true), 500);
         createMuteBtn();
-        setTimeout(() => startNightMusic(), 800);
+        _loadSoundsJs(function() { if (!musicMuted) startNightMusic(); }); // FIX: charger sounds.js avant de jouer
         if (IS_HOST) {
           const _nightStartTs = Date.now();
           G._currentNightTs = _nightStartTs;
@@ -2181,6 +2309,11 @@ if (IS_HOST) {
             nightStepDuration: null,
             nightStepLabel: null,
             nightStepRole: null,
+            saviorTarget: null,       // FIX: réinitialiser la protection du Salvateur
+            wolfVictim: null,          // FIX: réinitialiser la victime des loups
+            witchSaved: false,         // FIX: réinitialiser la décision sorcière (sauver)
+            witchKillTarget: null,     // FIX: réinitialiser la décision sorcière (tuer)
+            grandMechantVictim: null,  // FIX: réinitialiser la 2ème victime du Grand Méchant Loup
           });
         } else {
           // Non-hôte : tracker le tour localement
@@ -2380,6 +2513,7 @@ if (IS_HOST) {
           G.seqIdx++;
           G.actDone = false;
           setTimeout(() => {
+            _advNightPending = false; // FIX: réinitialiser le verrou pour permettre le prochain step
             G._advancedThisStep = false;
             nextNightStep();
           }, 400);
@@ -2417,7 +2551,14 @@ if (IS_HOST) {
               G.victim = v.id;
             }
             if (G.victim && !G.savedWitch) {
-              dead.push({ id: G.victim, reason: "dévoré par les Loups-Garous" });
+              // FIX: vérifier si la victime est protégée par le Salvateur
+              if (G.saviorTarget && G.saviorTarget === G.victim) {
+                if (IS_HOST) addChat("🛡️ <em>Le Salvateur a protégé la victime des loups cette nuit !</em>", true);
+                addJournal("Salvateur : victime sauvée (nuit " + G.turn + ")");
+                // Ne pas ajouter à dead — la victime est protégée
+              } else {
+                dead.push({ id: G.victim, reason: "dévoré par les Loups-Garous" });
+              }
             }
             if (G.victim) {
               const ancienPlayer = G.players.find(
@@ -2500,7 +2641,7 @@ if (IS_HOST) {
               if (IS_HOST) {
                 update(ref(db, "salons/" + SID + "/gameState"), {
                   phase: "day",
-                  turn: G.turn + 1,
+                  turn: G.turn, // FIX: G.turn déjà incrémenté en début de resolveNight
                   alive: Object.assign({}, G.alive),
                   deadThisTurn: [],
                   deathAnnounce: Date.now(),
@@ -2633,6 +2774,7 @@ if (IS_HOST) {
               phaseStart: dayStart,
               phaseDuration: DAY_DURATION,
               phase: "day",
+              turn: G.turn, // FIX: synchroniser le numéro de tour pour les non-hôtes
               voteOpen: false,
               voteResult: null,
               runoffTs: null,
@@ -2714,10 +2856,12 @@ if (IS_HOST) {
           renderVoteList();
           renderVoteSummary();
           // Résolution anticipée : si tous les vivants ont voté
-          if (IS_HOST && G.voteStarted) {
-            const alivePlayers = G.players.filter(p => G.alive[p.id]);
+          if (IS_HOST && G.voteStarted && !G._resolvingVotes) {
+            // FIX: utiliser isAlive() pour gérer les deux versions de clé (. et _)
+            const alivePlayers = G.players.filter(p => isAlive(p.id));
             const votesGiven = Object.keys(G.votes).length;
             if (votesGiven >= alivePlayers.length && alivePlayers.length > 0) {
+              G._resolvingVotes = true; // FIX: verrou anti-double résolution
               clearInterval(G.ivals.vote);
               update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: 0 });
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
@@ -2751,6 +2895,7 @@ if (IS_HOST) {
       function startVote() {
         if (G.voteStarted) return;
         G.voteStarted = true;
+        G._resolvingVotes = false; // FIX: réinitialiser le verrou anti-double résolution
         G.isRunoff = false;
         G.runoffCandidates = null;
 
@@ -2784,6 +2929,8 @@ if (IS_HOST) {
             update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: Math.max(0, _vRem) });
             if (_vRem <= 0) {
               clearInterval(G.ivals.vote);
+              if (G._resolvingVotes) return; // FIX: déjà résolu via résolution anticipée
+              G._resolvingVotes = true;
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
               resolveVotes();
             }
@@ -2805,7 +2952,8 @@ if (IS_HOST) {
             const votesForP = G.votes
               ? Object.values(G.votes).filter((v) => v === p.id).length
               : 0;
-            const totalVoters = G.players.filter((x) => G.alive[x.id]).length;
+            // FIX: utiliser isAlive() pour le total correct (gère les deux versions de clé)
+            const totalVoters = G.players.filter((x) => isAlive(x.id)).length;
             const pct = Math.round(
               (votesForP / Math.max(1, totalVoters)) * 100
             );
@@ -2845,10 +2993,9 @@ if (IS_HOST) {
       }
 
       function renderVoteSummary() {
-        Object.entries(G.corbeauBonus || {}).forEach(([id, bonus]) => {
-          if (!G.votes) return;
-        });
-        const totalVoters = G.players.filter((p) => G.alive[p.id]).length;
+        // FIX: la boucle corbeauBonus était vide — suppression de l'appel inutile
+        // FIX: utiliser isAlive() pour le compte correct des votants
+        const totalVoters = G.players.filter((p) => isAlive(p.id)).length;
         const votesGiven = G.votes ? Object.keys(G.votes).length : 0;
         const existing = document.getElementById("vote-summary");
         const summary = existing || document.createElement("div");
@@ -2959,6 +3106,8 @@ if (IS_HOST) {
           if (tally[id] !== undefined) tally[id] += bonus;
         });
         G.corbeauBonus = {}; // Réinitialiser
+        // FIX: réinitialiser aussi dans Firebase
+        if (IS_HOST) update(ref(db, "salons/" + SID + "/gameState"), { corbeauBonus: {} });
         if (!Object.keys(tally).length) {
           if (IS_HOST) addChat("⏰ <em>Personne n'a voté — la nuit tombe.</em>", true);
           addJournal("Jour " + G.turn + " — aucun vote.");
@@ -2972,12 +3121,31 @@ if (IS_HOST) {
           (id) => tally[id] === maxVotes
         );
 
-        // ⚖️ ÉGALITÉ → second tour — broadcaster via Firebase pour TOUS
+        // ⚖️ ÉGALITÉ → vérifier d'abord si le Bouc Émissaire est vivant
         if (candidates.length > 1 && !G.isRunoff) {
+          const bouc = G.players.find(p => p.role === "boucemissaire" && G.alive[p.id]);
+          if (bouc) {
+            // FIX: Le Bouc Émissaire prend la place en cas d'égalité
+            if (IS_HOST) addChat(
+              `⚖️ Égalité ! <strong>Le Bouc Émissaire</strong> (${bouc.name}) est éliminé à la place !`, true
+            );
+            set(ref(db, "salons/" + SID + "/votes"), null);
+            update(ref(db, "salons/" + SID + "/gameState"), {
+              voteResult: {
+                eliminated: bouc.id,
+                eliminatedRole: bouc.role,
+                eliminatedName: bouc.name,
+                tally: tally,
+                maxVotes: maxVotes,
+                ts: Date.now()
+              }
+            });
+            return;
+          }
           const RUNOFF_DURATION = 15;
           const runoffStart = Date.now();
           if (IS_HOST) {
-            if (IS_HOST) addChat(
+            addChat(
               "⚖️ <strong>Égalité !</strong> Second tour entre : " +
               candidates.map(id => {
                 const p = G.players.find(x => x.id === id);
@@ -3004,7 +3172,12 @@ if (IS_HOST) {
           if (IS_HOST) addChat("⚖️ <em>Toujours égalité après le second tour — personne n'est éliminé !</em>", true);
           addJournal("Jour " + G.turn + " — double égalité, aucune élimination.");
           set(ref(db, "salons/" + SID + "/votes"), null);
-          runNight();
+          // FIX: réinitialiser voteResult et voteOpen avant de passer à la nuit
+          // pour éviter que les clients re-déclenchent le handler voteResult
+          if (IS_HOST) update(ref(db, "salons/" + SID + "/gameState"), {
+            voteOpen: false, voteResult: null, voteCountdown: 0
+          });
+          if (IS_HOST) setTimeout(() => runNight(), 300);
           return;
         }
 
@@ -3039,13 +3212,18 @@ if (IS_HOST) {
       function showVoteResult(tally, eliminated, maxVotes, cb) {
         if (eliminated && G.alive[eliminated.id]) {
           const elim = G.players.find((p) => p.id === eliminated.id);
-          if (elim && elim.role === "idiot") {
+          if (elim && elim.role === "idiot" && !elim.idiotRevealed) {
             addChat(
               `🃏 <strong>${elim.name}</strong> est l'<strong>Idiot du Village</strong> ! Il ne peut pas être éliminé par le vote — mais il perd son droit de vote !`,
               true
             );
             elim.idiotRevealed = true;
+            elim.powerLost = true; // FIX: powerLost empêche de voter à l'avenir
             addJournal("Idiot du Village révélé — immunisé au vote");
+            // FIX: persister idiotRevealed dans Firebase pour la reconnexion
+            if (IS_HOST) {
+              update(ref(db, "salons/" + SID + "/gameState"), { players: G.players });
+            }
             renderPanels();
             cb && setTimeout(cb, 2000);
             return;
@@ -3309,7 +3487,6 @@ if (IS_HOST) {
           title.innerHTML = cardThumb + "🐻 Montreur d'Ours (15s)";
           desc.textContent =
             "Votre ours grogne si un de vos voisins est un loup :";
-          const myIdx = G.players.findIndex((p) => p.id === ME.id);
           const alive2 = G.players.filter((p) => G.alive[p.id]);
           const myAliveIdx = alive2.findIndex((p) => p.id === ME.id);
           const left = alive2[(myAliveIdx - 1 + alive2.length) % alive2.length];
@@ -3423,6 +3600,31 @@ if (IS_HOST) {
             }</div>
           </div>
           <button class="btn secondary full" style="margin-top:8px" onclick="doAct('pass')">Continuer</button>`;
+        } else if (G.myRole === "chienloup") {
+          title.innerHTML = cardThumb + "🐕 Chien-Loup (15s)";
+          if (G.turn === 1 && !G._chienloupChosen) {
+            desc.textContent = "Choisissez votre camp pour toute la partie :";
+            area.innerHTML = `
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+                <button class="btn" style="background:#1a0808;color:#ff8888;border:1px solid #8b3a3a;padding:1rem;font-size:0.9rem;flex-direction:column;gap:4px"
+                  onclick="doAct('chienloup_wolf')">🐺<br/>Camp des Loups</button>
+                <button class="btn" style="background:#0a1a0a;color:#88cc88;border:1px solid #3a6b3a;padding:1rem;font-size:0.9rem;flex-direction:column;gap:4px"
+                  onclick="doAct('chienloup_village')">🌾<br/>Camp du Village</button>
+              </div>`;
+          } else {
+            const campLabel = G._chienloupCamp === "wolf" ? "🐺 Loups" : "🌾 Village";
+            desc.textContent = G._chienloupChosen ? `Camp choisi : ${campLabel}` : "Chien-Loup n'agit qu'à la 1ère nuit.";
+            area.innerHTML = `<p style="color:#888;font-style:italic">Votre camp est fixé.</p>`;
+            setTimeout(() => advNight(), 1000);
+          }
+        } else if (G.myRole === "boucemissaire") {
+          title.innerHTML = cardThumb + "🐐 Bouc Émissaire (15s)";
+          desc.textContent = "En cas d'égalité au vote, vous êtes éliminé à la place des ex-æquo.";
+          area.innerHTML = `<div style="text-align:center;padding:1rem;background:#10131c;border-radius:10px">
+            <div style="font-size:2.5rem;margin-bottom:0.5rem">🐐</div>
+            <div style="color:#aaa;font-size:0.85rem;font-style:italic">Dormez et espérez que les votes ne soient pas à égalité…</div>
+          </div>
+          <button class="btn secondary full" style="margin-top:8px" onclick="doAct('pass')">Continuer</button>`;
         } else {
           title.textContent = "😴 Vous dormez";
           desc.textContent = "Votre rôle n'agit pas cette nuit.";
@@ -3474,17 +3676,17 @@ if (IS_HOST) {
             return;
           }
           G.victim = t.id;
+          // FIX: écrire la victime dans gameState pour que l'hôte la lise dans resolveNight
+          update(ref(db, "salons/" + SID + "/gameState"), {
+            wolfVictim: t.id,
+            victimForWitch: t.id,
+          });
           set(ref(db, "salons/" + SID + "/nightActions/wolf"), {
             type: "attack",
             target: t.id,
             by: ME.id,
             ts: Date.now(),
           });
-          if (IS_HOST || G.myRole === "wolf") {
-            update(ref(db, "salons/" + SID + "/gameState"), {
-              victimForWitch: t.id,
-            });
-          }
           // Message privé local pour les loups
           const wolfMsgDiv = document.createElement("div");
           wolfMsgDiv.className = "msg sys";
@@ -3525,7 +3727,8 @@ if (IS_HOST) {
         } else if (type === "wsave") {
           G.savedWitch = true;
           G.potions.save = false;
-          if (IS_HOST) update(ref(db, "salons/" + SID + "/gameState"), { potions: G.potions });
+          // FIX: toujours écrire dans Firebase — l'hôte en a besoin dans resolveNight
+          update(ref(db, "salons/" + SID + "/gameState"), { potions: G.potions, witchSaved: true });
           playSound("witch");
           // PRIVÉ : seulement la Sorcière voit qu'elle a sauvé
           addChatLocal("💚 Vous sauvez la victime des loups !");
@@ -3537,7 +3740,8 @@ if (IS_HOST) {
           }
           G.witchKill = t.id;
           G.potions.kill = false;
-          if (IS_HOST) update(ref(db, "salons/" + SID + "/gameState"), { potions: G.potions });
+          // FIX: toujours écrire dans Firebase — l'hôte en a besoin dans resolveNight
+          update(ref(db, "salons/" + SID + "/gameState"), { potions: G.potions, witchKillTarget: t.id });
           playSound("witch");
           // PRIVÉ : seulement la Sorcière voit sa cible
           addChatLocal("☠️ Vous utilisez la potion de mort sur <strong>" + t.name + "</strong>.");
@@ -3614,6 +3818,8 @@ if (IS_HOST) {
           }
           G.corbeauTarget = t.id;
           G.corbeauBonus[t.id] = (G.corbeauBonus[t.id] || 0) + 2;
+          // FIX: synchroniser corbeauBonus dans Firebase pour que l'hôte l'applique au vote
+          update(ref(db, "salons/" + SID + "/gameState"), { corbeauBonus: G.corbeauBonus });
           // PRIVÉ : le Corbeau voit sa cible, le village verra juste +2 votes au prochain scrutin
           addChatLocal("🪶 Vous désignez <strong>" + t.name + "</strong> — il recevra +2 voix au prochain vote.");
           addJournal("Corbeau : désigne " + t.name + " (+2 voix)");
@@ -3644,6 +3850,8 @@ if (IS_HOST) {
           }
           G.grandMechantUsed = true;
           G.grandMechantVictim = t.id;
+          // FIX: synchroniser vers Firebase pour que l'hôte l'utilise dans resolveNight
+          update(ref(db, "salons/" + SID + "/gameState"), { grandMechantVictim: t.id });
           // PRIVÉ : le village ne doit pas savoir qu'il y a une 2ème cible
           addChatLocal(`😈 Vous désignez <strong>${t.name}</strong> comme 2ème proie.`);
           addJournal("Grand Méchant Loup : 2ème cible " + t.name);
@@ -3657,6 +3865,27 @@ if (IS_HOST) {
           // PRIVÉ : seulement l'Enfant Sauvage voit son modèle
           addChatLocal(`🏹 Vous choisissez <strong>${p1?.name}</strong> comme modèle. Si il meurt, vous devenez loup.`);
           addJournal("Enfant Sauvage : modèle = " + p1?.name);
+        } else if (type === "chienloup_wolf" || type === "chienloup_village") {
+          // FIX: gérer le choix de camp du Chien-Loup
+          G._chienloupChosen = true;
+          G._chienloupCamp = type === "chienloup_wolf" ? "wolf" : "village";
+          if (G._chienloupCamp === "wolf") {
+            // Rejoindre les loups : changer le rôle localement
+            const myPlayer = G.players.find(p => p.id === ME.id);
+            if (myPlayer) myPlayer.role = "wolf";
+            G.myRole = "wolf";
+            // Mettre à jour Firebase
+            if (IS_HOST) update(ref(db, "salons/" + SID + "/gameState"), { players: G.players });
+            addChatLocal("🐕 Vous choisissez le camp des <strong>Loups</strong> ! Vous êtes maintenant Loup-Garou.");
+            addJournal("Chien-Loup : rejoint les Loups");
+          } else {
+            addChatLocal("🌾 Vous choisissez le camp du <strong>Village</strong> ! Vous restez Villageois.");
+            addJournal("Chien-Loup : reste Villageois");
+          }
+          G.actDone = true;
+          renderAction();
+          setTimeout(advNight, 800);
+          return;
         } else if (type === "joueurdeflute") {
           const targets = G.fluteTargets || [];
           if (targets.length < 2) {
@@ -3679,13 +3908,10 @@ if (IS_HOST) {
           const aliveNonFlute = G.players.filter(
             (p) => G.alive[p.id] && p.id !== ME.id
           );
-          if (aliveNonFlute.every((p) => G.charmedPlayers.includes(p.id))) {
+          // FIX: seul l'hôte vérifie la victoire flûte
+          if (IS_HOST && aliveNonFlute.every((p) => G.charmedPlayers.includes(p.id))) {
             setTimeout(
-              () =>
-                endGame(
-                  "flute",
-                  "Le Joueur de Flûte a charmé tout le village !"
-                ),
+              () => endGame("flute", "Le Joueur de Flûte a charmé tout le village !"),
               1500
             );
           }
@@ -3694,6 +3920,11 @@ if (IS_HOST) {
             showNotif("Choisissez une cible !");
             return;
           }
+          // FIX CRITIQUE: stocker la cible protégée pour resolveNight
+          G.saviorTarget = t.id;
+          G.lastSaviorTarget = t.id; // pour empêcher de protéger 2x la même cible
+          // FIX: toujours écrire dans gameState/saviorTarget - l'hôte le lit via onValue
+          update(ref(db, "salons/" + SID + "/gameState"), { saviorTarget: t.id });
           // PRIVÉ : seulement le Salvateur voit qui il protège
           addChatLocal("🛡️ Vous protégez <strong>" + t.name + "</strong> cette nuit.");
           addJournal("Salvateur : protège " + t.name);
@@ -3768,6 +3999,12 @@ if (IS_HOST) {
         broadcastSound("chasseur");
         kill(id);
         addJournal("Chasseur : abat " + t.name);
+        // FIX: synchroniser la mort dans Firebase pour que tous les joueurs la voient
+        addChat(`🏹 <strong>Le Chasseur</strong> emporte <strong>${t.name}</strong> dans sa chute !`, true);
+        if (IS_HOST) {
+          const aliveAfter = Object.assign({}, G.alive);
+          update(ref(db, "salons/" + SID + "/gameState"), { alive: aliveAfter });
+        }
         renderPanels();
         renderInfoPlayers();
         showDeathScreen(t, "abattu par le Chasseur", () => {
@@ -3785,6 +4022,9 @@ if (IS_HOST) {
       }
 
       function enterSpectatorMode() {
+        // FIX: éviter le double appel (init + onValue)
+        if (G._spectatorModeEntered) return;
+        G._spectatorModeEntered = true;
         G.chatOn = false;
         G.spectator = true;
         updateChat();
@@ -4022,7 +4262,8 @@ if (IS_HOST) {
 
         const isWolfRole = !sys && !isBot && G.phase === "night" &&
           (G.myRole === "wolf" || G.myRole === "whitewolf" || G.myRole === "grandmechant");
-        if (!sys && !isBot && !G.alive[ME.id]) return;
+        // FIX: utiliser isAlive() pour gérer les deux versions de clé et le cas undefined
+        if (!sys && !isBot && G.alive[ME.id] === false) return;
 
         const t = Date.now();
         // Clé de dédup : même auteur + même contenu dans fenêtre de 2s = doublon
@@ -4340,6 +4581,10 @@ if (IS_HOST) {
       }
 
       function checkWin() {
+        // FIX: seul l'hôte décide de la fin de partie et l'écrit dans Firebase.
+        // Les non-hôtes reçoivent gs.winner via onValue et appellent endGame() à partir de là.
+        if (!IS_HOST) return false;
+
         const alive = G.players.filter((p) => G.alive[p.id]);
         const wolves = alive.filter((p) =>
           ["wolf", "whitewolf", "grandmechant"].includes(p.role)
