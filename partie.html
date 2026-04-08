@@ -2412,17 +2412,25 @@ if (IS_HOST) {
           _renderAction(Math.max(0, rem));
           if (rem <= 0) {
             if (_actUnsub) { _actUnsub(); _actUnsub = null; }
-            // Tous les joueurs nettoient leur UI
-            document.getElementById("action-cbar").style.display = "none";
+            // Nettoyer l'UI pour TOUS
+            const _acb = document.getElementById("action-cbar");
+            if (_acb) _acb.style.display = "none";
             if (!G.actDone) {
               addChatLocal("⏰ Temps écoulé — action ignorée.");
               G.actDone = true;
             }
             const _wab = document.getElementById("wolf-attack-btn");
             if (_wab) _wab.style.display = "none";
-            // L'hôte avance à l'étape suivante
-            // Les non-hôtes nettoient leur UI via advNight() aussi
-            advNight();
+            // Non-hôtes : fermer les panneaux
+            if (!IS_HOST) {
+              G.forceAction = false;
+              goTab("village", null);
+              const _wp = document.getElementById("wolf-private");
+              if (_wp) _wp.style.display = "none";
+              G.chatOn = false;
+              updateChat();
+            }
+            // L'hôte : advNight() est appelé par _showNightTimer quand rem=0
           }
         });
       }
@@ -4833,15 +4841,23 @@ if (IS_HOST) {
         if (_nightCountdownUnsub) { _nightCountdownUnsub(); _nightCountdownUnsub = null; }
 
         if (IS_HOST) {
-          // L'hôte écrit le chiffre dans Firebase chaque seconde
+          // L'hôte écrit nightStepCountdown chaque seconde dans Firebase
+          // Quand rem=0 : appeler advNight() pour avancer à l'étape suivante
           let rem = duration;
+          let _advCalled = false;
           _renderNightBanner(label, rem, duration, roleImg);
           update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: rem });
           _nightTimerInterval = setInterval(() => {
             rem--;
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: Math.max(0, rem) });
-            _renderNightBanner(label, Math.max(0, rem), duration, roleImg);
-            // Note : advNight() est déclenché par showActionBar/setTimeout côté hôte
+            const remSafe = Math.max(0, rem);
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: remSafe });
+            _renderNightBanner(label, remSafe, duration, roleImg);
+            if (remSafe <= 0 && !_advCalled) {
+              _advCalled = true;
+              clearInterval(_nightTimerInterval);
+              _nightTimerInterval = null;
+              setTimeout(() => advNight(), 400);
+            }
           }, 1000);
         } else {
           // Non-hôte : afficher duration immédiatement, puis écouter Firebase
