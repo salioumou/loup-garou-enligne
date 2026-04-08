@@ -1228,10 +1228,19 @@ if (IS_HOST) {
               window._showNightTimer(gs.nightStepLabel, gs.nightStepStart, gs.nightStepDuration, img);
             }
 
-            // Voyante Bavarde a joué → avancer
-            if (gs.nightStepDone && gs.nightStepDone !== G._lastNightStepDone && G.phase === "night") {
+            // nightStepDone : l'hôte a avancé → les non-hôtes nettoient leur UI
+            if (gs.nightStepDone && gs.nightStepDone !== G._lastNightStepDone) {
               G._lastNightStepDone = gs.nightStepDone;
-              if (!IS_HOST) setTimeout(() => advNight(), 1200);
+              // Pas besoin d'appeler advNight() ici — le nouveau nightStepLabel
+              // arrivera dans le même onValue et déclenchera la bonne action
+              // Juste nettoyer l'UI action si elle est encore ouverte
+              if (!IS_HOST) {
+                const _ac = document.getElementById("action-cbar");
+                if (_ac) _ac.style.display = "none";
+                G.forceAction = false;
+                G.actDone = true;
+                goTab("village", null);
+              }
             }
 
             // Pour les NON-HÔTES uniquement : ouvrir le panneau si c'est leur tour
@@ -2403,6 +2412,7 @@ if (IS_HOST) {
           _renderAction(Math.max(0, rem));
           if (rem <= 0) {
             if (_actUnsub) { _actUnsub(); _actUnsub = null; }
+            // Tous les joueurs nettoient leur UI
             document.getElementById("action-cbar").style.display = "none";
             if (!G.actDone) {
               addChatLocal("⏰ Temps écoulé — action ignorée.");
@@ -2410,17 +2420,19 @@ if (IS_HOST) {
             }
             const _wab = document.getElementById("wolf-attack-btn");
             if (_wab) _wab.style.display = "none";
-            if (IS_HOST) advNight();
+            // L'hôte avance à l'étape suivante
+            // Les non-hôtes nettoient leur UI via advNight() aussi
+            advNight();
           }
         });
       }
 
       function advNight() {
         clearInterval(G.ivals.action);
-        // FIX : protéger tous les getElementById — certains peuvent être null
         const _el = (id) => document.getElementById(id);
+
+        // Nettoyage UI — pareil pour tout le monde
         if (_el("action-cbar")) _el("action-cbar").style.display = "none";
-        if (IS_HOST && window._hideNightTimer) window._hideNightTimer();
         G.forceAction = false;
         G.actDone = true;
         G.actTgt = null;
@@ -2430,15 +2442,16 @@ if (IS_HOST) {
         const wp = _el("wolf-private"); if(wp) wp.style.display = "none";
         G.chatOn = false;
         updateChat();
-        if (!IS_HOST) {
-          // Non-host : signaler au host que l'action est terminée
-          update(ref(db, "salons/" + SID + "/gameState"), { nightStepDone: Date.now() });
-          return;
+
+        if (IS_HOST) {
+          // Hôte : cacher timer nuit et avancer à l'étape suivante
+          if (window._hideNightTimer) window._hideNightTimer();
+          G.seqIdx++;
+          G.actDone = false;
+          setTimeout(nextNightStep, 600);
         }
-        // HOST : avancer à l'étape suivante
-        G.seqIdx++;
-        G.actDone = false;
-        setTimeout(nextNightStep, 600);
+        // Non-hôte : rien à faire — l'hôte avance la séquence via Firebase
+        // Le prochain nightStepLabel arrivera dans le onValue et réouvrira l'UI si besoin
       }
 
       function resolveNight() {
