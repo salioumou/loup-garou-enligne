@@ -1241,7 +1241,6 @@ if (IS_HOST) {
               clearInterval(G.ivals.vote);
               goTab("village", null);
               G.voteStarted = false;
-              G._resolvingVotes = false;
               // Non-hôte : déclencher runNight seulement si pas déjà en cours
               if (!IS_HOST && !G._nightRunning) {
                 G._nightRunning = true;
@@ -1254,7 +1253,6 @@ if (IS_HOST) {
               G.chatOn = true;
               updateChat();
               G.voteStarted = false;
-              G._nightRunning = false; // reset pour la prochaine nuit
               // FIX: synchroniser G.turn depuis Firebase pour les non-hôtes
               if (gs.turn && gs.turn !== G.turn) { G.turn = gs.turn; updateUI(); }
               const _npD = document.getElementById("night-panel");
@@ -1277,29 +1275,18 @@ if (IS_HOST) {
               // Timer discussion : écouter dayCountdown Firebase
               if (!IS_HOST) {
                 if (G._dayCountdownUnsub) { G._dayCountdownUnsub(); G._dayCountdownUnsub = null; }
-                // Utiliser phaseStart pour calculer le temps restant (plus fiable que dayCountdown)
-                const _dayDurTotal = gs.phaseDuration || 180;
-                const _dayStartTs = gs.phaseStart || Date.now();
-                const _dct = document.getElementById("cbar-time");
-                const _dcf = document.getElementById("cbar-fill");
-                const _mcD2 = document.getElementById("main-cbar");
-                if (_mcD2) _mcD2.style.display = "block";
-                // Timer local synchronisé sur phaseStart
-                clearInterval(G.ivals.main);
-                G.ivals.main = setInterval(() => {
-                  const _rem = Math.max(0, _dayDurTotal - Math.floor((Date.now() - _dayStartTs) / 1000));
-                  const m2 = Math.floor(_rem/60), s2 = _rem%60;
+                let _dcU3 = null;
+                _dcU3 = onValue(ref(db, "salons/" + SID + "/gameState/dayCountdown"), (snap) => {
+                  if (!snap.exists()) return;
+                  const r = snap.val();
+                  const m2 = Math.floor(r/60), s2 = r%60;
+                  const _dct = document.getElementById("cbar-time");
+                  const _dcf = document.getElementById("cbar-fill");
                   if (_dct) _dct.textContent = m2+":"+(s2<10?"0":"")+s2;
-                  if (_dcf) {
-                    _dcf.style.width = Math.round((_rem/_dayDurTotal)*100)+"%";
-                    _dcf.style.background = _rem <= 15 ? "#be6d6d" : "var(--accent)";
-                  }
-                  if (_rem <= 0) {
-                    clearInterval(G.ivals.main);
-                    if (_mcD2) _mcD2.style.display = "none";
-                    if (!G.voteStarted) startVote();
-                  }
-                }, 1000);
+                  if (_dcf) { _dcf.style.width = Math.round((r/(gs.phaseDuration||180))*100)+"%"; _dcf.style.background = "var(--accent)"; }
+                  if (r <= 0) { if (_dcU3) { _dcU3(); _dcU3 = null; } }
+                });
+                G._dayCountdownUnsub = _dcU3;
               }
             }
           }
@@ -1309,13 +1296,7 @@ if (IS_HOST) {
             G.voteStarted = true;
             G.isRunoff = false;
             G.runoffCandidates = null;
-            // Calculer le temps restant depuis phaseStart si disponible
-            let _voteDurLeft = gs.voteCountdown || 60;
-            if (gs.phaseStart && gs.phaseDuration) {
-              const _elapsed = Math.floor((Date.now() - gs.phaseStart) / 1000);
-              _voteDurLeft = Math.max(5, gs.phaseDuration - _elapsed);
-            }
-            _openVoteUI(_voteDurLeft);
+            _openVoteUI(gs.voteCountdown || 15);
           }
 
           // ── 10. Étape de nuit pour les NON-HÔTES
@@ -1380,15 +1361,35 @@ if (IS_HOST) {
             G.lastDeathAnnounce = gs.deathAnnounce;
             if (!IS_HOST) {
               const deadList = gs.deadThisTurn || [];
+              // Marquer les morts localement
               deadList.forEach(d => {
                 const p = G.players.find(x => x.id === d.id);
                 if (p) { kill(p.id); }
               });
               renderPanels(); renderInfoPlayers();
-              showNightBilan(deadList, () => {
-                // FIX: checkWin() ne fait rien pour les non-hôtes, juste lancer la musique
+              if (deadList.length === 0) {
+                // Pas de morts : passer au jour directement
                 _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
-              });
+                G._nightRunning = false;
+                // Attendre que l'hôte écrive phase:"day" via Firebase
+              } else {
+                showNightBilan(deadList, () => {
+                  // Après le bilan : musique + transition jour
+                  _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
+                  G._nightRunning = false;
+                  // Appliquer la transition jour côté non-hôte
+                  G.chatOn = true;
+                  updateChat();
+                  G.voteStarted = false;
+                  const _np = document.getElementById("night-panel");
+                  if (_np) _np.style.display = "none";
+                  const _wp = document.getElementById("wolf-private");
+                  if (_wp) _wp.style.display = "none";
+                  setPageBg("day");
+                  updateUI();
+                  // L'hôte écrira phase:"day" dans Firebase → le timer démarrera via onValue
+                });
+              }
             }
           }
 
@@ -2728,6 +2729,8 @@ if (IS_HOST) {
         clearIvals();
         G.voteStarted = false;
         G.voteListening = false;
+        G._nightRunning = false;
+        G._resolvingVotes = false;
         G.phase = "day";
         setPageBg("day");
         showGameNotif("☀️", "Le jour se lève ! Débattez et trouvez les loups.", 7000);
@@ -2739,12 +2742,53 @@ if (IS_HOST) {
         fill.style.width = "100%";
         G.chatOn = true;
         updateChat();
-
-        // FIX musique : coq puis musique jour pour l'hôte (via startDayMusic)
-        // Pour les non-hôtes, c'est géré dans deathAnnounce → showNightBilan callback
         _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
-        // FIX double msg : seul l'hôte écrit ce message
         if (IS_HOST) addChat("☀️ <strong>Jour " + G.turn + "</strong> — Débattez, accusez, votez !", true);
+
+        // ── CRITIQUE : écrire phase:"day" + phaseStart dans Firebase ──────────
+        // Sans ça, les non-hôtes ne savent jamais que le jour a commencé
+        const _dayStart = Date.now();
+        const _nbAlive = G.players.filter(p => isAlive(p.id)).length;
+        const _dayDur = G.dayDuration || (_nbAlive <= 8 ? 180 : _nbAlive <= 12 ? 240 : 300);
+        if (IS_HOST) {
+          update(ref(db, "salons/" + SID + "/gameState"), {
+            phase: "day",
+            phaseStart: _dayStart,
+            phaseDuration: _dayDur,
+            turn: G.turn,
+            voteOpen: false,
+            voteResult: null,
+            voteCountdown: 0,
+            runoffTs: null,
+            runoffCandidates: null,
+            nightStepStart: null,
+            nightStepLabel: null,
+            nightStepRole: null,
+          });
+          // Timer jour : décrémenter et écrire dayCountdown chaque seconde
+          let _dayRem = _dayDur;
+          const _dayFill = document.getElementById("cbar-fill");
+          const _dayTime = document.getElementById("cbar-time");
+          function _tickDay() {
+            const m2 = Math.floor(_dayRem/60), s2 = _dayRem%60;
+            if (_dayTime) _dayTime.textContent = m2+":"+(s2<10?"0":"")+s2;
+            if (_dayFill) {
+              _dayFill.style.width = Math.round((_dayRem/_dayDur)*100)+"%";
+              _dayFill.style.background = _dayRem <= 15 ? "#be6d6d" : "var(--accent)";
+            }
+          }
+          _tickDay();
+          G.ivals.main = setInterval(() => {
+            _dayRem = Math.max(0, _dayDur - Math.floor((Date.now() - _dayStart)/1000));
+            _tickDay();
+            update(ref(db, "salons/" + SID + "/gameState"), { dayCountdown: _dayRem });
+            if (_dayRem <= 0) {
+              clearInterval(G.ivals.main);
+              document.getElementById("main-cbar").style.display = "none";
+              if (!G.voteStarted) startVote();
+            }
+          }, 1000);
+        }
 
         // Voyante Bavarde : révélation de la nuit précédente
         if (G.vbReveal && G.vbReveal.turn === G.turn - 1) {
@@ -2781,54 +2825,7 @@ if (IS_HOST) {
         setPhaseInfo("☀️ Phase de discussion — débattez !");
         goTab("village", document.getElementById("tbtn-village"));
         if (G.allowBots) scheduleBots();
-        (() => {
-          const nbPlayers = G.players.filter(p => G.alive[p.id]).length;
-          const DAY_DURATION = G.dayDuration || (nbPlayers <= 8 ? 180 : nbPlayers <= 12 ? 270 : 330);
-          // FIX synchronisation : l'hôte écrit phaseStart dans Firebase
-          // Tous les joueurs (y compris l'hôte) démarrent leur timer depuis ce même timestamp
-          const dayStart = Date.now();
-          fill.style.background = "var(--accent)";
-          if (IS_HOST) {
-            update(ref(db, "salons/" + SID + "/gameState"), {
-              phaseStart: dayStart,
-              phaseDuration: DAY_DURATION,
-              phase: "day",
-              turn: G.turn, // FIX: synchroniser le numéro de tour pour les non-hôtes
-              voteOpen: false,
-              voteResult: null,
-              runoffTs: null,
-              runoffCandidates: null,
-              nightStepStart: null,
-              nightStepLabel: null,
-              nightStepRole: null,
-            });
-          }
-          // L'hôte écrit dayCountdown chaque seconde — non-hôtes lisent via Firebase
-          if (IS_HOST) {
-            let _dayRem = DAY_DURATION;
-            const _dayFill = document.getElementById("cbar-fill");
-            const _dayTime = document.getElementById("cbar-time");
-            function _updateDayTimer(r) {
-              const m2 = Math.floor(r/60), s2 = r%60;
-              if (_dayTime) _dayTime.textContent = m2 + ":" + (s2<10?"0":"") + s2;
-              if (_dayFill) _dayFill.style.width = Math.round((r/DAY_DURATION)*100) + "%";
-              if (r <= 15 && _dayFill) _dayFill.style.background = "#be6d6d";
-            }
-            _updateDayTimer(_dayRem);
-            G.ivals.main = setInterval(() => {
-              _dayRem--;
-              _updateDayTimer(Math.max(0, _dayRem));
-              update(ref(db, "salons/" + SID + "/gameState"), { dayCountdown: Math.max(0, _dayRem) });
-              if (_dayRem <= 0) {
-                clearInterval(G.ivals.main);
-                document.getElementById("main-cbar").style.display = "none";
-                startVote();
-              }
-            }, 1000);
-          }
-        })();
       }
-
       // ── Ouvrir l'UI de vote pour un joueur (hôte ou non-hôte) ─────────────
       function _openVoteUI(voteDur) {
         G.hasVoted = false;
@@ -2918,7 +2915,7 @@ if (IS_HOST) {
         G.isRunoff = false;
         G.runoffCandidates = null;
 
-        const VOTE_DUR = 60; // 60 secondes pour voter
+        const VOTE_DUR = 15;
 
         if (IS_HOST) {
           addChat("🗳️ <strong>Le village doit voter !</strong> Qui mérite d'être éliminé ?", true);
@@ -4306,44 +4303,26 @@ if (IS_HOST) {
       let _lastMsgSent = 0;
       let _sendingMsg = false;
       window.sendChat = function () {
-        // FIX: en phase jour, forcer chatOn=true si elle est bloquée par erreur
-        if (!G.chatOn && G.phase === "day") {
-          G.chatOn = true;
-          updateChat();
-        }
         if (!G.chatOn) {
           showNotif("Chat indisponible maintenant !");
           return;
         }
-        if (_sendingMsg) return;
+        if (_sendingMsg) return; // anti-doublon
         const inp = document.getElementById("msg-inp"),
           txt = inp.value.trim();
         if (!txt) return;
+        // Anti-spam : 500ms entre deux messages
         const now = Date.now();
-        if (now - _lastMsgSent < 800) return; // anti-spam 800ms
+        if (now - _lastMsgSent < 500) return;
         _lastMsgSent = now;
         _sendingMsg = true;
         inp.value = "";
         closeGameEmoji();
-        // FIX: forcer sys=false et ne pas vérifier alive pour les messages perso
-        const t2 = Date.now();
-        const chatRef2 = ref(db, "salons/" + SID + "/gameChat/" + t2 + "_" + Math.random().toString(36).slice(2,5));
-        set(chatRef2, {
-          text: txt,
-          sys: false,
-          wolf: G.phase === "night" && (G.myRole === "wolf" || G.myRole === "whitewolf" || G.myRole === "grandmechant"),
-          uid: ME.id,
-          author: ME.name,
-          isBot: false,
-          t: t2,
-        }).catch(e => {
-          showNotif("⚠️ Message non envoyé — réessayez");
-          console.warn("[chat]", e.code);
-        });
+        addChat(txt, false);
         if (typeof clearTimeout !== "undefined") clearTimeout(G._typTimer);
         const db2 = getDatabase();
         set(ref(db2, "gameTyping/" + SID + "/" + ME.id), null);
-        setTimeout(() => { _sendingMsg = false; }, 800);
+        setTimeout(() => { _sendingMsg = false; }, 500);
       };
 
       let _lastDeadMsgSent = 0;
