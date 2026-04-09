@@ -3150,7 +3150,9 @@ if (IS_HOST) {
       function _doResolveVotes(votes) {
         const tally = {};
         Object.values(votes).forEach((targetId) => {
-          tally[targetId] = (tally[targetId] || 0) + 1;
+          // Normaliser: bot.Bob et bot_Bob → même compteur
+          const normId = toFirebaseKey(targetId);
+          tally[normId] = (tally[normId] || 0) + 1;
         });
         Object.entries(G.corbeauBonus || {}).forEach(([id, bonus]) => {
           if (tally[id] !== undefined) tally[id] += bonus;
@@ -3198,7 +3200,7 @@ if (IS_HOST) {
             addChat(
               "⚖️ <strong>Égalité !</strong> Second tour entre : " +
               candidates.map(id => {
-                const p = G.players.find(x => x.id === id);
+                const p = G.players.find(x => x.id === id || toFirebaseKey(x.id) === id);
                 return p ? `<strong>${p.name}</strong>` : "?";
               }).join(", ") + ".", true
             );
@@ -3234,7 +3236,8 @@ if (IS_HOST) {
         G.isRunoff = false;
         G.runoffCandidates = null;
         const eliminated = candidates[Math.floor(Math.random() * candidates.length)];
-        const t = G.players.find((p) => p.id === eliminated);
+        // FIX: chercher par ID exact OU par version safe (bot.Bob ↔ bot_Bob)
+        const t = G.players.find((p) => p.id === eliminated || toFirebaseKey(p.id) === eliminated);
         if (!t) {
           set(ref(db, "salons/" + SID + "/votes"), null);
           // FIX VOTE : broadcaster que personne n'est éliminé → nuit
@@ -4623,7 +4626,7 @@ if (IS_HOST) {
             const targets = alivePlayers.filter(p => p.id !== bot.id);
             if (!targets.length) return;
             const target = targets[Math.floor(Math.random() * targets.length)];
-            const botSafeId = bot.id.replace(/\./g, "_");
+            const botSafeId = toFirebaseKey(bot.id);
             set(ref(db, "salons/" + SID + "/votes/" + botSafeId), target.id);
           }, (i + 1) * 2000 + Math.random() * 3000);
         });
