@@ -5071,8 +5071,8 @@ if (IS_HOST) {
               _advCalled = true;
               clearInterval(_nightTimerInterval);
               _nightTimerInterval = null;
-              // Ne pas avancer si le joueur hôte a déjà agi (advNight déjà appelé)
-              if (!G.seqIdx || !G._advancedThisStep) {
+              // Ne pas avancer si advNight a déjà été appelé pour cette étape
+              if (!G._advancedThisStep) {
                 G._advancedThisStep = true;
                 setTimeout(() => advNight(), 400);
               }
