@@ -2921,22 +2921,28 @@ if (IS_HOST) {
         });
 
         // Écouter voteCountdown (mis à jour par l'hôte chaque seconde)
-        // FIX : let + null pour éviter "before initialization"
         let _vcUnsub2 = null;
         _vcUnsub2 = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
           if (!snap.exists()) return;
           const r = snap.val();
           const m2 = Math.floor(r/60), s2 = r%60;
           const ts = m2 + ":" + (s2<10?"0":"") + s2;
-          if (ct) ct.textContent = ts;
-          if (vt) vt.textContent = ts;
+          // Relire les éléments à chaque tick pour éviter les refs nulles
+          const _ct = document.getElementById("cbar-time");
+          const _vt = document.getElementById("vote-time");
+          const _cf = document.getElementById("cbar-fill");
+          const _vf = document.getElementById("vote-fill");
+          const _mc = document.getElementById("main-cbar");
+          const _vc = document.getElementById("vote-cbar");
+          if (_ct) _ct.textContent = ts;
+          if (_vt) _vt.textContent = ts;
           const pct = Math.round((r / voteDur) * 100);
-          if (cf) cf.style.width = pct + "%";
-          if (vf) vf.style.width = pct + "%";
+          if (_cf) _cf.style.width = pct + "%";
+          if (_vf) _vf.style.width = pct + "%";
           if (r <= 0) {
             if (_vcUnsub2) { _vcUnsub2(); _vcUnsub2 = null; }
-            if (mc) mc.style.display = "none";
-            if (vc) vc.style.display = "none";
+            if (_mc) _mc.style.display = "none";
+            if (_vc) _vc.style.display = "none";
             if (G.voteListener) { G.voteListener(); G.voteListener = null; }
           }
         });
@@ -3130,13 +3136,12 @@ if (IS_HOST) {
           showNotif("❌ Ce joueur est déjà mort !");
           G.selVote = null; return;
         }
-        // FIX VOTE : enregistre le vote dans Firebase — modifiable jusqu'à la fin du timer
-        // Ne pas verrouiller : le joueur peut rechanger son vote
         const safeId = ME_SAFE_ID;
         set(ref(db, "salons/" + SID + "/votes/" + safeId), G.selVote);
-        showNotif("✅ Vote enregistré — vous pouvez encore changer !");
-        // Juste un retour visuel, pas de verrou
-        G.hasVoted = true; // pour le compteur de votes donnés
+        G.hasVoted = true;
+        // Fermer le panneau de vote après confirmation
+        goTab("village", null);
+        showNotif("✅ Vote enregistré !");
       };
 
       function resolveVotes() {
