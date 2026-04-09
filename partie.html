@@ -3137,11 +3137,14 @@ if (IS_HOST) {
           G.selVote = null; return;
         }
         const safeId = ME_SAFE_ID;
-        set(ref(db, "salons/" + SID + "/votes/" + safeId), G.selVote);
-        G.hasVoted = true;
-        // Fermer le panneau de vote après confirmation
-        goTab("village", null);
-        showNotif("✅ Vote enregistré !");
+        const vName = G.players.find(p => p.id === G.selVote)?.name || "?";
+        set(ref(db, "salons/" + SID + "/votes/" + safeId), G.selVote)
+          .then(() => {
+            G.hasVoted = true;
+            goTab("village", null);
+            showNotif("✅ Vote pour " + vName + " enregistré !");
+          })
+          .catch(() => showNotif("⚠️ Erreur réseau — réessayez"));
       };
 
       function resolveVotes() {
