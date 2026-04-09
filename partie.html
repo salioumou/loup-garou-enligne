@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="fr">
   <head>
@@ -476,6 +475,12 @@
       // Helper : normaliser une clé Firebase (remplacer les caractères interdits)
       function toFirebaseKey(id) {
         return id ? id.replace(/[.$#\[\]/]/g, "_") : id;
+      }
+      // Helper: convertit tout G.alive en clés Firebase-safe
+      function safeAlive(aliveObj) {
+        const out = {};
+        Object.keys(aliveObj).forEach(k => { out[toFirebaseKey(k)] = aliveObj[k]; });
+        return out;
       }
       const SID = localStorage.getItem("lg_current_salon");
       let IS_HOST = false;
@@ -2351,7 +2356,7 @@ if (IS_HOST) {
             phase: "night",
             turn: G.turn,
             nightStartTs: _nightStartTs,
-            alive: Object.assign({}, G.alive),
+            alive: safeAlive(G.alive),
             voteOpen: false,
             voteResult: null,
             winner: null,
@@ -2691,7 +2696,7 @@ if (IS_HOST) {
                 update(ref(db, "salons/" + SID + "/gameState"), {
                   phase: "day",
                   turn: G.turn, // FIX: G.turn déjà incrémenté en début de resolveNight
-                  alive: Object.assign({}, G.alive),
+                  alive: safeAlive(G.alive),
                   deadThisTurn: [],
                   deathAnnounce: Date.now(),
                   voteOpen: false,
@@ -2709,9 +2714,9 @@ if (IS_HOST) {
             } else {
               setTimeout(() => playSound("wolf"), 300);
               if (IS_HOST) {
-                const aliveAfter = Object.assign({}, G.alive);
+                const aliveAfter = safeAlive(G.alive);
                 dead.forEach((d) => {
-                  aliveAfter[d.id] = false;
+                  aliveAfter[toFirebaseKey(d.id)] = false;
                 });
                 update(ref(db, "salons/" + SID + "/gameState"), {
                   alive: aliveAfter,
@@ -4046,7 +4051,7 @@ if (IS_HOST) {
         // FIX: synchroniser la mort dans Firebase pour que tous les joueurs la voient
         addChat(`🏹 <strong>Le Chasseur</strong> emporte <strong>${t.name}</strong> dans sa chute !`, true);
         if (IS_HOST) {
-          const aliveAfter = Object.assign({}, G.alive);
+          const aliveAfter = safeAlive(G.alive);
           update(ref(db, "salons/" + SID + "/gameState"), { alive: aliveAfter });
         }
         renderPanels();
@@ -4699,7 +4704,7 @@ if (IS_HOST) {
           update(ref(db, "salons/" + SID + "/gameState"), {
             winner,
             winDesc: desc,
-            alive: Object.assign({}, G.alive),
+            alive: safeAlive(G.alive),
           });
         }
         G.gameEnded = true;
@@ -5234,7 +5239,7 @@ if (IS_HOST) {
         update(ref(db, "salons/" + SID + "/gameState"), {
           kickedPlayer: pid,
           kickedTs: Date.now(),
-          alive: Object.assign({}, G.alive),
+          alive: safeAlive(G.alive),
         });
         if (!checkWin()) {}
         window.updateHostPanel();
