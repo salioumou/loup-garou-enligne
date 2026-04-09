@@ -2766,6 +2766,13 @@ if (IS_HOST) {
         G._nightRunning = false;
         G._resolvingVotes = false;
         G.phase = "day";
+        // Cacher la bannière loups au début du jour
+        const _vbD = document.getElementById("wolf-vote-btn");
+        if (_vbD) _vbD.style.display = "none";
+        const _wpD2 = document.getElementById("wolf-private");
+        if (_wpD2) _wpD2.style.display = "none";
+        const _abD = document.getElementById("wolf-attack-btn");
+        if (_abD) _abD.style.display = "none";
         setPageBg("day");
         showGameNotif("☀️", "Le jour se lève ! Débattez et trouvez les loups.", 7000);
         updateUI();
@@ -3757,10 +3764,13 @@ if (IS_HOST) {
           addJournal("Loups : cible " + t.name + " (nuit " + G.turn + ")");
           G.actDone = true;
           renderAction();
-          if (IS_HOST) {
-            advNight();
+          clearInterval(_nightTimerInterval);
+          _nightTimerInterval = null;
+          if (IS_HOST && !G._advancedThisStep) {
+            G._advancedThisStep = true;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            setTimeout(() => advNight(), 600);
           }
-          // Non-hôte : attend que l'hôte avance via nightStepCountdown=0
           return;
         } else if (type === "seer") {
           if (!t) {
@@ -4020,7 +4030,14 @@ if (IS_HOST) {
         }
         G.actDone = true;
         renderAction();
-        setTimeout(advNight, 800);
+        // Stopper le timer immédiatement et avancer
+        clearInterval(_nightTimerInterval);
+        _nightTimerInterval = null;
+        if (IS_HOST && !G._advancedThisStep) {
+          G._advancedThisStep = true;
+          update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+          setTimeout(() => advNight(), 600);
+        }
       };
 
       function fireHunter(hunter, cb) {
