@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="fr">
   <head>
@@ -1167,17 +1168,6 @@ if (IS_HOST) {
             if (gs.grandMechantVictim && !G.grandMechantVictim) G.grandMechantVictim = gs.grandMechantVictim;
           }
 
-          // ── 4f. FIX: non-hôte a fini son action → l'hôte avance immédiatement
-          if (IS_HOST && gs.nightActionDone && gs.nightActionDone !== G._lastNightActionDone) {
-            G._lastNightActionDone = gs.nightActionDone;
-            if (G.phase === "night" && !G._advancedThisStep) {
-              G._advancedThisStep = true;
-              clearInterval(_nightTimerInterval);
-              _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-              setTimeout(() => advNight(), 600);
-            }
-          }
 
           // ── 5. Fin de partie
           if (gs.winner && !G.gameEnded) {
@@ -3751,18 +3741,10 @@ if (IS_HOST) {
           addJournal("Loups : cible " + t.name + " (nuit " + G.turn + ")");
           G.actDone = true;
           renderAction();
-          // FIX: stopper le timer immédiatement (cas attack avec return anticipé)
-          clearInterval(_nightTimerInterval);
-          _nightTimerInterval = null;
           if (IS_HOST) {
-            if (!G._advancedThisStep) {
-              G._advancedThisStep = true;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-              setTimeout(() => advNight(), 600);
-            }
-          } else {
-            update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id });
+            advNight();
           }
+          // Non-hôte : attend que l'hôte avance via nightStepCountdown=0
           return;
         } else if (type === "seer") {
           if (!t) {
@@ -4022,18 +4004,7 @@ if (IS_HOST) {
         }
         G.actDone = true;
         renderAction();
-        // FIX: arrêter le timer immédiatement et signaler l'action faite
-        clearInterval(_nightTimerInterval);
-        _nightTimerInterval = null;
-        if (IS_HOST) {
-          if (!G._advancedThisStep) {
-            G._advancedThisStep = true;
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-            setTimeout(() => advNight(), 600);
-          }
-        } else {
-          update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id });
-        }
+        setTimeout(advNight, 800);
       };
 
       function fireHunter(hunter, cb) {
