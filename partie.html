@@ -2831,20 +2831,8 @@ if (IS_HOST) {
           }, 1000);
         }
 
-        // Voyante Bavarde : révélation de la nuit précédente
-        if (G.vbReveal && G.vbReveal.turn === G.turn - 1) {
-          const vbR = G.vbReveal;
-          setTimeout(() => {
-            addChat(
-              `👁️ <strong>La Voyante Bavarde</strong> a révélé cette carte cette nuit :<br/>` +
-              `<div style="display:inline-flex;align-items:center;gap:10px;background:rgba(0,0,0,0.3);border-radius:10px;padding:8px 14px;margin-top:6px;border:1px solid rgba(201,164,76,0.4)">` +
-              (vbR.roleImg ? `<img src="${vbR.roleImg}" style="width:36px;height:48px;border-radius:6px;object-fit:cover"/>` : `<span style="font-size:1.5rem">🃏</span>`) +
-              `<div><div style="font-family:'Cinzel',serif;color:var(--accent);font-size:0.95rem">${vbR.roleName}</div>` +
-              `<div style="font-size:0.75rem;color:${vbR.isWolf ? '#be6d6d' : '#6dbe6d'}">${vbR.isWolf ? '🐺 Camp des Loups' : '✅ Camp du Village'}</div></div></div>`,
-              true
-            );
-          }, 1500);
-        }
+        // Voyante Bavarde : le message est déjà envoyé pendant la nuit via doAct
+        // Pas besoin de le répéter au lever du jour
 
         // Montreur d'Ours : annonce publique chaque matin
         const bearKeeper = G.players.find(p => p.role === "montreurdours" && G.alive[p.id] && !p.powerLost);
@@ -2927,27 +2915,52 @@ if (IS_HOST) {
           }
         });
 
-        // Écouter voteCountdown (mis à jour par l'hôte chaque seconde)
-        let _vcUnsub2 = null;
-        _vcUnsub2 = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
-          if (!snap.exists()) return;
-          const r = snap.val();
+        // Timer local qui décompte chaque seconde (visible pour tous)
+        // Synchronisé par Firebase voteCountdown mais tourne localement pour fluidité
+        let _localVoteRem = voteDur;
+        const _updateVoteDisplay = (r) => {
           const m2 = Math.floor(r/60), s2 = r%60;
           const ts = m2 + ":" + (s2<10?"0":"") + s2;
-          // Relire les éléments à chaque tick pour éviter les refs nulles
           const _ct = document.getElementById("cbar-time");
           const _vt = document.getElementById("vote-time");
           const _cf = document.getElementById("cbar-fill");
           const _vf = document.getElementById("vote-fill");
-          const _mc = document.getElementById("main-cbar");
-          const _vc = document.getElementById("vote-cbar");
           if (_ct) _ct.textContent = ts;
           if (_vt) _vt.textContent = ts;
           const pct = Math.round((r / voteDur) * 100);
-          if (_cf) _cf.style.width = pct + "%";
-          if (_vf) _vf.style.width = pct + "%";
+          if (_cf) _cf.style.width = Math.max(0,pct) + "%";
+          if (_vf) _vf.style.width = Math.max(0,pct) + "%";
+        };
+        // Afficher immédiatement la valeur initiale
+        _updateVoteDisplay(_localVoteRem);
+
+        // setInterval local pour décompter chaque seconde (tous les joueurs)
+        if (!IS_HOST) {
+          const _localVoteIval = setInterval(() => {
+            _localVoteRem = Math.max(0, _localVoteRem - 1);
+            _updateVoteDisplay(_localVoteRem);
+            if (_localVoteRem <= 0) {
+              clearInterval(_localVoteIval);
+              const _mc2 = document.getElementById("main-cbar");
+              const _vc2 = document.getElementById("vote-cbar");
+              if (_mc2) _mc2.style.display = "none";
+              if (_vc2) _vc2.style.display = "none";
+            }
+          }, 1000);
+        }
+
+        // onValue Firebase: synchroniser le chrono local avec la valeur hôte
+        let _vcUnsub2 = null;
+        _vcUnsub2 = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
+          if (!snap.exists()) return;
+          const r = snap.val();
+          // Synchroniser le compteur local avec Firebase (évite la dérive)
+          _localVoteRem = r;
+          _updateVoteDisplay(r);
           if (r <= 0) {
             if (_vcUnsub2) { _vcUnsub2(); _vcUnsub2 = null; }
+            const _mc = document.getElementById("main-cbar");
+            const _vc = document.getElementById("vote-cbar");
             if (_mc) _mc.style.display = "none";
             if (_vc) _vc.style.display = "none";
             if (G.voteListener) { G.voteListener(); G.voteListener = null; }
@@ -3839,15 +3852,15 @@ if (IS_HOST) {
             text: vbMsg, sys: true, author: "Système", uid: ME.id, t: Date.now(),
           });
           addJournal("Voyante Bavarde : révèle " + roleName + (isWolf ? " (Loup)" : " (Village)"));
-          // Passer automatiquement à l'étape suivante après le choix
           G.actDone = true;
-          // Mettre à jour Firebase pour que TOUS les joueurs avancent
-          if (IS_HOST) {
-            update(ref(db, "salons/" + SID + "/gameState"), {
-              nightStepDone: Date.now(),
-            });
+          // Stopper le timer immédiatement et avancer
+          clearInterval(_nightTimerInterval);
+          _nightTimerInterval = null;
+          if (IS_HOST && !G._advancedThisStep) {
+            G._advancedThisStep = true;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            setTimeout(() => advNight(), 600);
           }
-          setTimeout(() => advNight(), 1200);
         } else if (type === "thief") {
           const idx3 = G.thiefChoice;
           const surplusRoles = G.surplusRoles || [];
