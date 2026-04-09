@@ -1226,7 +1226,11 @@ if (IS_HOST) {
           }
 
           // ── 8. Phase du jeu
-          if (gs.phase && gs.phase !== G.phase) {
+          // Détecter aussi un changement de phaseStart (nouveau tour de jour)
+          const _phaseStartChanged = gs.phaseStart && gs.phaseStart !== G._lastPhaseStart;
+          if (_phaseStartChanged) G._lastPhaseStart = gs.phaseStart;
+
+          if ((gs.phase && gs.phase !== G.phase) || (gs.phase === "day" && _phaseStartChanged && !IS_HOST)) {
             const prevPhase = G.phase;
             G.phase = gs.phase;
 
@@ -1253,7 +1257,8 @@ if (IS_HOST) {
               G.chatOn = true;
               updateChat();
               G.voteStarted = false;
-              // FIX: synchroniser G.turn depuis Firebase pour les non-hôtes
+              G._nightRunning = false;
+              G._resolvingVotes = false;
               if (gs.turn && gs.turn !== G.turn) { G.turn = gs.turn; updateUI(); }
               const _npD = document.getElementById("night-panel");
               if (_npD) _npD.style.display = "none";
@@ -1264,29 +1269,36 @@ if (IS_HOST) {
               const _clD = document.getElementById("cbar-label");
               if (_clD) _clD.textContent = "☀️ Discussion";
               const _cfD = document.getElementById("cbar-fill");
-              if (_cfD) { _cfD.style.background = "var(--accent)"; }
+              if (_cfD) { _cfD.style.background = "var(--accent)"; _cfD.style.width = "100%"; }
               setPhaseInfo("☀️ Phase de discussion");
               setPageBg("day");
+              goTab("village", null);
               if (prevPhase === "night" || prevPhase === "resolving") {
                 const ambDay = DAY_AMBIANCE[G.turn % DAY_AMBIANCE.length] || "";
                 showDayTransition("☀️ L'aube se lève sur Hurlebois", ambDay, null);
               }
-              goTab("village", null);
-              // Timer discussion : écouter dayCountdown Firebase
-              if (!IS_HOST) {
-                if (G._dayCountdownUnsub) { G._dayCountdownUnsub(); G._dayCountdownUnsub = null; }
-                let _dcU3 = null;
-                _dcU3 = onValue(ref(db, "salons/" + SID + "/gameState/dayCountdown"), (snap) => {
-                  if (!snap.exists()) return;
-                  const r = snap.val();
-                  const m2 = Math.floor(r/60), s2 = r%60;
-                  const _dct = document.getElementById("cbar-time");
-                  const _dcf = document.getElementById("cbar-fill");
+              // Timer jour : calculé depuis phaseStart (plus fiable que dayCountdown)
+              if (!IS_HOST && gs.phaseStart && gs.phaseDuration) {
+                clearInterval(G.ivals.main);
+                const _tsD = gs.phaseStart;
+                const _durD = gs.phaseDuration;
+                const _dct = document.getElementById("cbar-time");
+                const _dcf = document.getElementById("cbar-fill");
+                const _mcD2 = document.getElementById("main-cbar");
+                G.ivals.main = setInterval(() => {
+                  const _rem = Math.max(0, _durD - Math.floor((Date.now() - _tsD) / 1000));
+                  const m2 = Math.floor(_rem/60), s2 = _rem%60;
                   if (_dct) _dct.textContent = m2+":"+(s2<10?"0":"")+s2;
-                  if (_dcf) { _dcf.style.width = Math.round((r/(gs.phaseDuration||180))*100)+"%"; _dcf.style.background = "var(--accent)"; }
-                  if (r <= 0) { if (_dcU3) { _dcU3(); _dcU3 = null; } }
-                });
-                G._dayCountdownUnsub = _dcU3;
+                  if (_dcf) {
+                    _dcf.style.width = Math.round((_rem/_durD)*100)+"%";
+                    _dcf.style.background = _rem <= 15 ? "#be6d6d" : "var(--accent)";
+                  }
+                  if (_rem <= 0) {
+                    clearInterval(G.ivals.main);
+                    if (_mcD2) _mcD2.style.display = "none";
+                    if (!G.voteStarted) startVote();
+                  }
+                }, 1000);
               }
             }
           }
@@ -1368,10 +1380,23 @@ if (IS_HOST) {
               });
               renderPanels(); renderInfoPlayers();
               if (deadList.length === 0) {
-                // Pas de morts : passer au jour directement
+                // Pas de morts : appliquer la transition jour immédiatement
                 _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
                 G._nightRunning = false;
-                // Attendre que l'hôte écrive phase:"day" via Firebase
+                G.chatOn = true;
+                updateChat();
+                G.voteStarted = false;
+                const _np0 = document.getElementById("night-panel");
+                if (_np0) _np0.style.display = "none";
+                const _wp0 = document.getElementById("wolf-private");
+                if (_wp0) _wp0.style.display = "none";
+                const _mc0 = document.getElementById("main-cbar");
+                if (_mc0) _mc0.style.display = "block";
+                const _cl0 = document.getElementById("cbar-label");
+                if (_cl0) _cl0.textContent = "☀️ Discussion";
+                setPageBg("day");
+                updateUI();
+                // Le timer démarrera quand phaseStart arrivera via onValue (handler phase:"day")
               } else {
                 showNightBilan(deadList, () => {
                   // Après le bilan : musique + transition jour
