@@ -2410,7 +2410,7 @@ if (IS_HOST) {
             if (!hasPotion) return false;
           }
           // Rôles dont le pouvoir a été supprimé (Ancien exécuté par le village)
-          const player = G.players.find(p => p.role === s.r);
+          const player = G.players.find(p => p.role === s.r && isAlive(p.id));
           if (player?.powerLost) return false;
           return true;
         });
@@ -2610,11 +2610,11 @@ if (IS_HOST) {
             if (_wpEl) _wpEl.style.display = "none";
             let dead = [];
             const botVillagers = G.players.filter(
-              (p) => p.isBot && G.alive[p.id] && p.role !== "wolf"
+              (p) => p.isBot && isAlive(p.id) && p.role !== "wolf"
                    && p.role !== "whitewolf" && p.role !== "grandmechant"
             );
             // Petite Fille : 30% de chance d'être repérée par les loups chaque nuit
-            const littleGirl = G.players.find(p => p.role === "littlegirl" && G.alive[p.id] && !p.powerLost);
+            const littleGirl = G.players.find(p => p.role === "littlegirl" && isAlive(p.id) && !p.powerLost);
             if (littleGirl && !G.victim && !G.savedWitch && Math.random() < 0.30) {
               G.victim = littleGirl.id;
               if (IS_HOST) addChat("👧 <em>La Petite Fille a été repérée en train d'espionner…</em>", true);
@@ -2656,7 +2656,7 @@ if (IS_HOST) {
             }
             if (G.witchKill) {
               const wv = G.players.find((p) => p.id === G.witchKill);
-              if (wv && G.alive[wv.id])
+              if (wv && isAlive(wv.id))
                 dead.push({ id: wv.id, reason: "tué(e) par la Sorcière" });
             }
             if (G.grandMechantVictim) {
@@ -2665,11 +2665,11 @@ if (IS_HOST) {
               const wolfDiedBefore = G.players.some(
                 (p) =>
                   (p.role === "wolf" || p.role === "grandmechant") &&
-                  !G.alive[p.id]
+                  !isAlive(p.id)
               );
               if (!wolfDiedBefore) {
                 const gv = G.players.find((p) => p.id === G.grandMechantVictim);
-                if (gv && G.alive[gv.id])
+                if (gv && isAlive(gv.id))
                   dead.push({
                     id: gv.id,
                     reason: "dévoré par le Grand Méchant Loup",
@@ -2683,7 +2683,7 @@ if (IS_HOST) {
               G.grandMechantVictim = null;
               G.grandMechantUsed = false;
             }
-            if (G.wildChildModel && !G.alive[G.wildChildModel]) {
+            if (G.wildChildModel && !isAlive(G.wildChildModel)) {
               const wildChild = G.players.find(
                 (p) => p.id === ME.id && p.role === "enfantsauvage"
               );
@@ -2701,7 +2701,7 @@ if (IS_HOST) {
               if (G.lovers.includes(d.id)) {
                 const other = G.lovers.find((x) => x !== d.id);
                 const op = G.players.find((p) => p.id === other);
-                if (op && G.alive[op.id] && !dead.find((x) => x.id === op.id))
+                if (op && isAlive(op.id) && !dead.find((x) => x.id === op.id))
                   extraDead.push({
                     id: op.id,
                     reason: "mort(e) de chagrin (amour brisé)",
@@ -2871,9 +2871,9 @@ if (IS_HOST) {
         }
 
         // Montreur d'Ours : annonce publique chaque matin
-        const bearKeeper = G.players.find(p => p.role === "montreurdours" && G.alive[p.id] && !p.powerLost);
+        const bearKeeper = G.players.find(p => p.role === "montreurdours" && isAlive(p.id) && !p.powerLost);
         if (bearKeeper) {
-          const aliveP = G.players.filter(p => G.alive[p.id]);
+          const aliveP = G.players.filter(p => isAlive(p.id));
           const myIdx = aliveP.findIndex(p => p.id === bearKeeper.id);
           const left  = aliveP[(myIdx - 1 + aliveP.length) % aliveP.length];
           const right = aliveP[(myIdx + 1) % aliveP.length];
@@ -3061,7 +3061,7 @@ if (IS_HOST) {
         const c = document.getElementById("vote-list");
         // Second tour : n'afficher que les ex-æquo (seulement si isRunoff actif)
         const vot = (G.isRunoff && G.runoffCandidates)
-          ? G.players.filter((p) => G.runoffCandidates.includes(p.id))
+          ? G.players.filter((p) => G.runoffCandidates.includes(p.id) && isAlive(p.id))
           : G.players.filter((p) => isAlive(p.id) && p.id !== ME.id);
         const safeId = ME_SAFE_ID;
         const myVote = G.votes ? (G.votes[safeId] || G.votes[ME.id]) : null;
@@ -3197,7 +3197,7 @@ if (IS_HOST) {
       window.castVote = function () {
         if (!G.selVote) return;
         if (!isAlive(ME.id)) { showNotif("❌ Les morts ne votent pas !"); return; }
-        if (G.selVote && !G.alive[G.selVote]) {
+        if (G.selVote && !isAlive(G.selVote)) {
           showNotif("❌ Ce joueur est déjà mort !");
           G.selVote = null; return;
         }
@@ -3251,7 +3251,7 @@ if (IS_HOST) {
 
         // ⚖️ ÉGALITÉ → vérifier d'abord si le Bouc Émissaire est vivant
         if (candidates.length > 1 && !G.isRunoff) {
-          const bouc = G.players.find(p => p.role === "boucemissaire" && G.alive[p.id]);
+          const bouc = G.players.find(p => p.role === "boucemissaire" && isAlive(p.id));
           if (bouc) {
             // FIX: Le Bouc Émissaire prend la place en cas d'égalité
             if (IS_HOST) addChat(
@@ -3339,7 +3339,7 @@ if (IS_HOST) {
       }
 
       function showVoteResult(tally, eliminated, maxVotes, cb) {
-        if (eliminated && G.alive[eliminated.id]) {
+        if (eliminated && isAlive(eliminated.id)) {
           const elim = G.players.find((p) => p.id === eliminated.id);
           if (elim && elim.role === "idiot" && !elim.idiotRevealed) {
             addChat(
@@ -3368,7 +3368,7 @@ if (IS_HOST) {
         const overlay = document.createElement("div");
         overlay.style.cssText = `position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.97);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.2rem;text-align:center;padding:2rem;animation:nightFadeIn 0.5s ease forwards;`;
         const sortedPlayers = G.players
-          .filter((p) => G.alive[p.id])
+          .filter((p) => isAlive(p.id))
           .sort((a, b) => (tally[b.id] || 0) - (tally[a.id] || 0));
         overlay.innerHTML = `
           <div style="font-family:'Cinzel',serif;font-size:1.5rem;color:var(--accent);animation:transTextAppear 0.5s ease forwards">🗳️ Résultat du vote</div>
@@ -3381,7 +3381,7 @@ if (IS_HOST) {
                   (v /
                     Math.max(
                       1,
-                      G.players.filter((x) => G.alive[x.id]).length
+                      G.players.filter((x) => isAlive(x.id)).length
                     )) *
                     100
                 );
@@ -3526,7 +3526,7 @@ if (IS_HOST) {
           desc.textContent = "Vous espionnez les loups...";
           playSound("littlegirl");
           const wolves = G.players.filter(
-            (p) => p.role === "wolf" && G.alive[p.id]
+            (p) => p.role === "wolf" && isAlive(p.id)
           );
           area.innerHTML = `<div style="padding:1rem;background:#0d0d20;border-radius:8px;border:1px solid #333399;text-align:center">
             <p style="color:#9999ff;margin-bottom:6px">Loups actifs :</p>
@@ -3600,7 +3600,7 @@ if (IS_HOST) {
               `<button class="btn full" style="margin-top:6px" onclick="doAct('enfantsauvage')">Choisir comme modèle</button>`;
           } else if (G.wildChildModel) {
             const model = G.players.find((p) => p.id === G.wildChildModel);
-            const isWolf = !G.alive[G.wildChildModel];
+            const isWolf = !isAlive(G.wildChildModel);
             desc.textContent = isWolf
               ? "Votre modèle est mort — vous êtes maintenant Loup-Garou !"
               : `Modèle : ${model?.name || "?"} (toujours vivant)`;
@@ -3620,7 +3620,7 @@ if (IS_HOST) {
           title.innerHTML = cardThumb + "🐻 Montreur d'Ours (15s)";
           desc.textContent =
             "Votre ours grogne si un de vos voisins est un loup :";
-          const alive2 = G.players.filter((p) => G.alive[p.id]);
+          const alive2 = G.players.filter((p) => isAlive(p.id));
           const myAliveIdx = alive2.findIndex((p) => p.id === ME.id);
           const left = alive2[(myAliveIdx - 1 + alive2.length) % alive2.length];
           const right = alive2[(myAliveIdx + 1) % alive2.length];
@@ -3941,7 +3941,7 @@ if (IS_HOST) {
           addJournal(
             "Montreur d'Ours : ours a " +
               (() => {
-                const aliveP = G.players.filter((p) => G.alive[p.id]);
+                const aliveP = G.players.filter((p) => isAlive(p.id));
                 const myIdx3 = aliveP.findIndex((p) => p.id === ME.id);
                 const l = aliveP[(myIdx3 - 1 + aliveP.length) % aliveP.length];
                 const r2 = aliveP[(myIdx3 + 1) % aliveP.length];
@@ -4048,7 +4048,7 @@ if (IS_HOST) {
           addJournal("Joueur de Flûte : charme " + names);
           G.fluteTargets = [];
           const aliveNonFlute = G.players.filter(
-            (p) => G.alive[p.id] && p.id !== ME.id
+            (p) => isAlive(p.id) && p.id !== ME.id
           );
           // FIX: seul l'hôte vérifie la victoire flûte
           if (IS_HOST && aliveNonFlute.every((p) => G.charmedPlayers.includes(p.id))) {
@@ -4123,7 +4123,7 @@ if (IS_HOST) {
       function fireHunter(hunter, cb) {
         if (hunter.id === ME.id) {
           const alive = G.players.filter(
-            (p) => G.alive[p.id] && p.id !== ME.id
+            (p) => isAlive(p.id) && p.id !== ME.id
           );
           const btns = alive
             .map(
@@ -4214,7 +4214,7 @@ if (IS_HOST) {
           <div style="font-size:0.75rem;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.6rem">Rôles de tous les joueurs :</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px">
             ${G.players.map((p) => {
-              const r = RDATA[p.role] || RDATA.villager, alive = G.alive[p.id];
+              const r = RDATA[p.role] || RDATA.villager, alive = isAlive(p.id);
               return `<div style="display:flex;align-items:center;gap:6px;background:#10131c;border:1px solid ${alive ? "#252d3a" : "#1e1e1e"};border-radius:8px;padding:5px 10px;opacity:${alive ? 1 : 0.4}">
                 <img src="${r.img}" style="width:22px;height:30px;border-radius:3px;object-fit:cover"/>
                 <div>
@@ -4319,7 +4319,7 @@ if (IS_HOST) {
 
         PL.innerHTML = '<div class="side-label">Joueurs</div>' +
           G.players.map((p, idx) => {
-            const dead  = !G.alive[p.id];
+            const dead  = !isAlive(p.id);
             const isMe  = p.id === ME.id;
             const lover = G.lovers.includes(p.id);
             const myR   = RDATA[G.myRole] || RDATA.villager;
@@ -4340,7 +4340,7 @@ if (IS_HOST) {
           roleIds.map(rid => {
             const r    = RDATA[rid] || RDATA.villager;
             const pl   = G.players.filter(p => p.role === rid);
-            const allDead = pl.every(p => !G.alive[p.id]);
+            const allDead = pl.every(p => !isAlive(p.id));
             const cnt  = pl.length;
             return `<div class="mini-card ${allDead?"dead":""}">
               <img src="${r.img}" style="width:100%;height:100%;object-fit:cover;object-position:top;display:block"/>
@@ -4596,7 +4596,7 @@ if (IS_HOST) {
         if (!c) return;
         c.innerHTML = G.players
           .map((p) => {
-            const alive = G.alive[p.id],
+            const alive = isAlive(p.id),
               lover = G.lovers.includes(p.id);
             return `<div class="player-row${!alive ? " dead" : ""}">
             <div style="display:flex;align-items:center;gap:8px">${getAvatarHtml(
@@ -4612,7 +4612,7 @@ if (IS_HOST) {
       }
 
       function getBotMessage(bot, phase) {
-        const ap = G.players.filter((p) => G.alive[p.id] && p.id !== bot.id);
+        const ap = G.players.filter((p) => isAlive(p.id) && p.id !== bot.id);
         const rp  = ap[Math.floor(Math.random() * ap.length)];
         const ap2 = ap.filter(p => p !== rp);
         const rp2 = ap2[Math.floor(Math.random() * ap2.length)];
@@ -4685,21 +4685,21 @@ if (IS_HOST) {
       function scheduleBots() {
         if (G._botsScheduled === G.turn) return; // déjà planifié ce tour
         G._botsScheduled = G.turn;
-        const botsAlive = G.players.filter((p) => p.isBot && G.alive[p.id]);
+        const botsAlive = G.players.filter((p) => p.isBot && isAlive(p.id));
         botsAlive.forEach((bot, i) => {
           setTimeout(() => {
-            if (!G.alive[bot.id] || G.phase !== "day") return;
+            if (!isAlive(bot.id) || G.phase !== "day") return;
             addChat(getBotMessage(bot, "day"), false, bot.name);
           }, 4000 + i * 3500 + Math.random() * 5000);
 
           setTimeout(() => {
-            if (!G.alive[bot.id] || G.phase !== "day") return;
+            if (!isAlive(bot.id) || G.phase !== "day") return;
             addChat(getBotMessage(bot, "day"), false, bot.name);
           }, 50000 + Math.random() * 70000);
 
           if (i % 3 !== 0) {
             setTimeout(() => {
-              if (!G.alive[bot.id] || G.phase !== "day") return;
+              if (!isAlive(bot.id) || G.phase !== "day") return;
               addChat(getBotMessage(bot, "day"), false, bot.name);
             }, 130000 + Math.random() * 40000);
           }
@@ -4708,11 +4708,11 @@ if (IS_HOST) {
 
       function scheduleBotsNight() {
         const wolfBots = G.players.filter(
-          (p) => p.isBot && p.role === "wolf" && G.alive[p.id]
+          (p) => p.isBot && p.role === "wolf" && isAlive(p.id)
         );
         wolfBots.forEach((bot, i) => {
           setTimeout(() => {
-            if (!G.alive[bot.id] || G.phase !== "night") return;
+            if (!isAlive(bot.id) || G.phase !== "night") return;
             addChat(getBotMessage(bot, "night"), false, bot.name);
           }, (i + 1) * 3000 + Math.random() * 4000);
         });
@@ -4720,8 +4720,8 @@ if (IS_HOST) {
 
       function scheduleBotsVote() {
         // Bots votent automatiquement après 2-5s
-        const alivePlayers = G.players.filter(p => G.alive[p.id] && p.id !== ME.id);
-        const botPlayers = G.players.filter(p => p.isBot && G.alive[p.id]);
+        const alivePlayers = G.players.filter(p => isAlive(p.id) && p.id !== ME.id);
+        const botPlayers = G.players.filter(p => p.isBot && isAlive(p.id));
         if (!botPlayers.length) return;
         botPlayers.forEach((bot, i) => {
           setTimeout(() => {
@@ -4742,7 +4742,7 @@ if (IS_HOST) {
         // Les non-hôtes reçoivent gs.winner via onValue et appellent endGame() à partir de là.
         if (!IS_HOST) return false;
 
-        const alive = G.players.filter((p) => G.alive[p.id]);
+        const alive = G.players.filter((p) => isAlive(p.id));
         const wolves = alive.filter((p) =>
           ["wolf", "whitewolf", "grandmechant"].includes(p.role)
         );
@@ -4753,7 +4753,7 @@ if (IS_HOST) {
         if (
           G.lovers.length === 2 &&
           alive.length === 2 &&
-          G.lovers.every((id) => G.alive[id])
+          G.lovers.every((id) => isAlive(id))
         ) {
           endGame("lovers", "Les amoureux sont les deux derniers survivants !");
           return true;
@@ -4769,7 +4769,7 @@ if (IS_HOST) {
         }
 
         const flutePlayer = G.players.find(
-          (p) => p.role === "joueurdeflute" && G.alive[p.id]
+          (p) => p.role === "joueurdeflute" && isAlive(p.id)
         );
         if (flutePlayer) {
           const othersAlive = alive.filter((p) => p.id !== flutePlayer.id);
@@ -4920,7 +4920,7 @@ if (IS_HOST) {
               ${G.players.map((p) => {
                 const r = RDATA[p.role] || RDATA.villager;
                 const lover = G.lovers.includes(p.id);
-                const alive = G.alive[p.id];
+                const alive = isAlive(p.id);
                 return `<div class="player-row" style="opacity:${alive ? 1 : 0.5}">
                   <div style="display:flex;align-items:center;gap:8px">
                     <img src="${r.img}" style="width:32px;height:44px;border-radius:5px;object-fit:cover;object-position:top"/>
@@ -4957,7 +4957,7 @@ if (IS_HOST) {
 
         let pts = 0;
         const myT = (RDATA[G.myRole] || RDATA.villager).t;
-        const iAmAlive = G.alive[ME.id];
+        const iAmAlive = isAlive(ME.id);
         const iAmLover = G.lovers.includes(ME.id);
 
         // Participation
@@ -5007,14 +5007,14 @@ if (IS_HOST) {
 
         // Dernier villageois (secret)
         if (iAmAlive && myT !== "wolves" && winner === "village") {
-          const aliveVillagers = G.players.filter(p => G.alive[p.id] && (RDATA[p.role]||RDATA.villager).t !== "wolves");
+          const aliveVillagers = G.players.filter(p => isAlive(p.id) && (RDATA[p.role]||RDATA.villager).t !== "wolves");
           if (aliveVillagers.length === 1 && aliveVillagers[0].id === ME.id) {
             s.secretDernierJuste = (s.secretDernierJuste||0) + 1;
           }
         }
 
         // Loups tués (côté village uniquement)
-        const wolvesKilled = G.players.filter(p => !G.alive[p.id] && p.role === "wolf").length;
+        const wolvesKilled = G.players.filter(p => !isAlive(p.id) && p.role === "wolf").length;
         if (myT !== "wolves") pts += wolvesKilled * 10;
         s.wolvesKilled = (s.wolvesKilled || 0) + wolvesKilled;
 
@@ -5300,7 +5300,7 @@ if (IS_HOST) {
         }
         const sel = document.getElementById("host-kick-select");
         if (sel) {
-          const alive = G.players.filter(p => G.alive[p.id] !== false && p.id !== ME.id);
+          const alive = G.players.filter(p => isAlive(p.id) !== false && p.id !== ME.id);
           sel.innerHTML = '<option value="">— Choisir un joueur —</option>' +
             alive.map(p => `<option value="${p.id}">${p.name}${p.isBot?" 🤖":""}</option>`).join("");
         }
