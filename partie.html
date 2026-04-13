@@ -1323,11 +1323,14 @@ if (IS_HOST) {
           }
 
           // ── 9. Vote ouvert → déclencher pour les non-hôtes
-          if (gs.voteOpen && !IS_HOST && !G.voteStarted) {
+          // Ne pas rouvrir si voteResult est déjà arrivé (évite réapparition panneau)
+          if (gs.voteOpen && !IS_HOST && !G.voteStarted && !G._voteResultHandled) {
             G.voteStarted = true;
             G.isRunoff = false;
             G.runoffCandidates = null;
-            _openVoteUI(gs.voteCountdown || 15);
+            // Toujours passer 15 comme durée totale pour la barre de progression
+            // gs.voteCountdown = temps restant réel, 15 = durée totale fixe
+            _openVoteUI(15, gs.voteCountdown || 15);
           }
 
           // ── 10. Étape de nuit pour les NON-HÔTES
@@ -2875,7 +2878,9 @@ if (IS_HOST) {
         if (G.allowBots) scheduleBots();
       }
       // ── Ouvrir l'UI de vote pour un joueur (hôte ou non-hôte) ─────────────
-      function _openVoteUI(voteDur) {
+      function _openVoteUI(voteDur, initialRem) {
+        // voteDur = durée totale (15s) pour % barre, initialRem = temps restant réel
+        if (initialRem === undefined) initialRem = voteDur;
         G.hasVoted = false;
         G.selVote = null;
         G.votes = {};
@@ -2893,8 +2898,8 @@ if (IS_HOST) {
         const ct = document.getElementById("cbar-time");
         if (mc) mc.style.display = "block";
         if (cl) cl.textContent = "🗳️ Vote — " + voteDur + "s !";
-        if (cf) { cf.style.background = "#be6d6d"; cf.style.width = "100%"; }
-        if (ct) ct.textContent = "0:" + (voteDur < 10 ? "0" : "") + voteDur;
+        if (cf) { cf.style.background = "#be6d6d"; cf.style.width = Math.round((initialRem/voteDur)*100)+"%"; }
+        if (ct) ct.textContent = "0:" + (initialRem < 10 ? "0" : "") + initialRem;
 
         // vote-cbar dans l'overlay
         const vc = document.getElementById("vote-cbar");
@@ -2902,8 +2907,8 @@ if (IS_HOST) {
         const vt = document.getElementById("vote-time");
         const vd = document.getElementById("vote-desc");
         if (vc) vc.style.display = "block";
-        if (vf) { vf.style.background = "#be6d6d"; vf.style.width = "100%"; }
-        if (vt) vt.textContent = "0:" + (voteDur < 10 ? "0" : "") + voteDur;
+        if (vf) { vf.style.background = "#be6d6d"; vf.style.width = Math.round((initialRem/voteDur)*100)+"%"; }
+        if (vt) vt.textContent = "0:" + (initialRem < 10 ? "0" : "") + initialRem;
         if (vd) vd.textContent = "Choisissez le joueur à éliminer :";
 
         // Ouvrir panneau vote pour les vivants
@@ -2940,7 +2945,7 @@ if (IS_HOST) {
         if (G._voteCountdownIval) { clearInterval(G._voteCountdownIval); G._voteCountdownIval = null; }
         if (G._voteCountdownUnsub) { G._voteCountdownUnsub(); G._voteCountdownUnsub = null; }
 
-        let _localVoteRem = voteDur;
+        let _localVoteRem = initialRem;
         const _updateVoteDisplay = (r) => {
           const m2 = Math.floor(r/60), s2 = r%60;
           const ts = m2 + ":" + (s2<10?"0":"") + s2;
@@ -2993,7 +2998,8 @@ if (IS_HOST) {
       function startVote() {
         if (G.voteStarted) return;
         G.voteStarted = true;
-        G._resolvingVotes = false; // FIX: réinitialiser le verrou anti-double résolution
+        G._resolvingVotes = false;
+        G._voteResultHandled = null; // Reset pour que le prochain vote puisse s'ouvrir
         G.isRunoff = false;
         G.runoffCandidates = null;
 
