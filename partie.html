@@ -2327,6 +2327,9 @@ if (IS_HOST) {
 
       function runNight() {
         clearIvals();
+        // Nettoyer les timers vote du tour précédent
+        if (G._voteCountdownIval) { clearInterval(G._voteCountdownIval); G._voteCountdownIval = null; }
+        if (G._voteCountdownUnsub) { G._voteCountdownUnsub(); G._voteCountdownUnsub = null; }
         G.phase = "night";
         G.hasVoted = false;
         G._nightRunning = false;
@@ -2933,8 +2936,10 @@ if (IS_HOST) {
           }
         });
 
-        // Timer local qui décompte chaque seconde (visible pour tous)
-        // Synchronisé par Firebase voteCountdown mais tourne localement pour fluidité
+        // Nettoyer les timers du vote précédent s'ils existent encore
+        if (G._voteCountdownIval) { clearInterval(G._voteCountdownIval); G._voteCountdownIval = null; }
+        if (G._voteCountdownUnsub) { G._voteCountdownUnsub(); G._voteCountdownUnsub = null; }
+
         let _localVoteRem = voteDur;
         const _updateVoteDisplay = (r) => {
           const m2 = Math.floor(r/60), s2 = r%60;
@@ -2949,16 +2954,16 @@ if (IS_HOST) {
           if (_cf) _cf.style.width = Math.max(0,pct) + "%";
           if (_vf) _vf.style.width = Math.max(0,pct) + "%";
         };
-        // Afficher immédiatement la valeur initiale
         _updateVoteDisplay(_localVoteRem);
 
-        // setInterval local pour décompter chaque seconde (tous les joueurs)
+        // Timer local visible par tous — stocké dans G pour pouvoir le nettoyer
         if (!IS_HOST) {
-          const _localVoteIval = setInterval(() => {
+          G._voteCountdownIval = setInterval(() => {
             _localVoteRem = Math.max(0, _localVoteRem - 1);
             _updateVoteDisplay(_localVoteRem);
             if (_localVoteRem <= 0) {
-              clearInterval(_localVoteIval);
+              clearInterval(G._voteCountdownIval);
+              G._voteCountdownIval = null;
               const _mc2 = document.getElementById("main-cbar");
               const _vc2 = document.getElementById("vote-cbar");
               if (_mc2) _mc2.style.display = "none";
@@ -2967,16 +2972,15 @@ if (IS_HOST) {
           }, 1000);
         }
 
-        // onValue Firebase: synchroniser le chrono local avec la valeur hôte
-        let _vcUnsub2 = null;
-        _vcUnsub2 = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
+        // onValue Firebase: synchroniser le chrono — stocké dans G pour nettoyage
+        G._voteCountdownUnsub = onValue(ref(db, "salons/" + SID + "/gameState/voteCountdown"), (snap) => {
           if (!snap.exists()) return;
           const r = snap.val();
-          // Synchroniser le compteur local avec Firebase (évite la dérive)
           _localVoteRem = r;
           _updateVoteDisplay(r);
           if (r <= 0) {
-            if (_vcUnsub2) { _vcUnsub2(); _vcUnsub2 = null; }
+            if (G._voteCountdownUnsub) { G._voteCountdownUnsub(); G._voteCountdownUnsub = null; }
+            if (G._voteCountdownIval) { clearInterval(G._voteCountdownIval); G._voteCountdownIval = null; }
             const _mc = document.getElementById("main-cbar");
             const _vc = document.getElementById("vote-cbar");
             if (_mc) _mc.style.display = "none";
@@ -3179,8 +3183,8 @@ if (IS_HOST) {
         set(ref(db, "salons/" + SID + "/votes/" + safeId), G.selVote)
           .then(() => {
             G.hasVoted = true;
-            showNotif("✅ Vote pour " + vName + " — modifiable jusqu'à la fin !");
-            // Ne pas fermer le panneau: le joueur peut changer son vote
+            goTab("village", null);
+            showNotif("✅ Vote pour " + vName + " enregistré !");
           })
           .catch(() => showNotif("⚠️ Erreur réseau — réessayez"));
       };
