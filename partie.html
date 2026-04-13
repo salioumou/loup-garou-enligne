@@ -1353,7 +1353,8 @@ if (IS_HOST) {
 
               const _doOpen = () => {
                 G.actDone = false; G.actTgt = null;
-                if (G.myRole === "wolf" || G.myRole === "whitewolf" || G.myRole === "grandmechant") {
+                if (G.myRole === "wolf") {
+                  // Loup classique : chat privé + bouton attaque
                   G.forceAction = false; G.chatOn = true; updateChat();
                   const _wp = document.getElementById("wolf-private"); if (_wp) _wp.style.display = "block";
                   const _wpl = document.getElementById("wolf-private-label"); if (_wpl) _wpl.style.display = "inline";
@@ -3190,6 +3191,9 @@ if (IS_HOST) {
           .then(() => {
             G.hasVoted = true;
             goTab("village", null);
+            // S'assurer que main-cbar reste visible après fermeture du panneau
+            const _mcV = document.getElementById("main-cbar");
+            if (_mcV) _mcV.style.display = "block";
             showNotif("✅ Vote pour " + vName + " enregistré !");
           })
           .catch(() => showNotif("⚠️ Erreur réseau — réessayez"));
@@ -3439,7 +3443,9 @@ if (IS_HOST) {
           title.textContent = "⚡ Pouvoir perdu";
           desc.textContent = "L'Ancien a été exécuté — vous avez perdu vos pouvoirs.";
           area.innerHTML = "<p style='color:#be6d6d;font-style:italic'>💀 Vos pouvoirs ont disparu — l'Ancien a été exécuté par le village.</p>";
-          setTimeout(() => advNight(), 1500);
+          clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+          if (IS_HOST && !G._advancedThisStep) { G._advancedThisStep = true; update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 }); setTimeout(() => advNight(), 600); }
+          else if (!IS_HOST) { update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id }); }
           return;
         }
         const r = RDATA[G.myRole] || RDATA.villager;
@@ -3495,7 +3501,9 @@ if (IS_HOST) {
             desc.textContent = "Cupidon n'agit qu'au 1er tour.";
             area.innerHTML =
               '<p style="color:#555;font-style:italic">Déjà utilisé.</p>';
-            setTimeout(() => advNight(), 1000);
+            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+            if (IS_HOST && !G._advancedThisStep) { G._advancedThisStep = true; update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 }); setTimeout(() => advNight(), 600); }
+            else if (!IS_HOST) { update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id }); }
           }
         } else if (G.myRole === "littlegirl") {
           title.innerHTML = cardThumb + "👧 Espionnage (15s)";
