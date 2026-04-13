@@ -439,12 +439,35 @@
       .dock-unread{position:absolute;top:-4px;right:-4px;background:#be4444;color:#fff;border-radius:50%;width:15px;height:15px;font-size:0.52rem;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #0b0e14}
       .dot-on-sm{width:8px;height:8px;border-radius:50%;background:#6dbe6d;box-shadow:0 0 4px #6dbe6d;display:inline-block;flex-shrink:0}
       .dot-off-sm{width:8px;height:8px;border-radius:50%;background:#444;display:inline-block;flex-shrink:0}
+      /* ── Bouton FAB chat + sélecteur amis ─── */
+      #chat-fab{position:fixed;bottom:20px;right:20px;z-index:450;display:none;flex-direction:column;align-items:flex-end;gap:8px}
+      #chat-fab-btn{width:52px;height:52px;border-radius:50%;background:var(--accent);border:none;cursor:pointer;font-size:1.4rem;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(201,164,76,0.45);transition:transform 0.2s,box-shadow 0.2s;flex-shrink:0;position:relative}
+      #chat-fab-btn:hover{transform:scale(1.1);box-shadow:0 6px 22px rgba(201,164,76,0.65)}
+      #chat-fab-badge{position:absolute;top:-3px;right:-3px;background:#be4444;color:#fff;border-radius:50%;min-width:18px;height:18px;font-size:0.56rem;font-weight:700;display:none;align-items:center;justify-content:center;border:2px solid #0b0e14;padding:0 3px}
+      #chat-picker{background:#0e1118;border:1px solid #1e2535;border-radius:14px;padding:6px;width:220px;max-height:300px;overflow-y:auto;box-shadow:0 -6px 28px rgba(0,0,0,0.65);display:none;flex-direction:column;gap:3px;scrollbar-width:thin}
+      #chat-picker.open{display:flex}
+      #chat-picker-title{font-size:0.7rem;color:#555;font-weight:600;padding:4px 6px 6px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid #1e2535;margin-bottom:2px}
+      .cp-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:10px;cursor:pointer;transition:background 0.15s;border:1px solid transparent}
+      .cp-row:hover{background:rgba(201,164,76,0.07);border-color:rgba(201,164,76,0.18)}
+      .cp-row-name{font-size:0.82rem;font-weight:600;color:var(--highlight);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .cp-row-unread{background:#be4444;color:#fff;border-radius:9px;padding:1px 6px;font-size:0.58rem;font-weight:700;flex-shrink:0}
+      .cp-empty{font-size:0.78rem;color:#555;font-style:italic;padding:10px 6px;text-align:center}
     </style>
   </head>
   <body style="position: relative">
     <div class="notif" id="notif"></div>
     <div id="chat-wins-acc"></div>
     <div id="chat-dock-acc"></div>
+    <!-- Bouton FAB conversations -->
+    <div id="chat-fab">
+      <div id="chat-picker">
+        <div id="chat-picker-title">💬 Conversations</div>
+      </div>
+      <div style="position:relative">
+        <button id="chat-fab-btn" onclick="window._toggleChatPicker()" title="Conversations">💬</button>
+        <span id="chat-fab-badge"></span>
+      </div>
+    </div>
     <!-- Toast ami en ligne -->
     <div id="friend-online-toast" style="position:fixed;bottom:80px;left:16px;background:#1a2a1a;border:1px solid #6dbe6d;border-radius:12px;padding:10px 16px;font-size:0.82rem;color:#6dbe6d;z-index:500;display:none;align-items:center;gap:10px;box-shadow:0 4px 20px rgba(0,0,0,0.5);max-width:260px;cursor:pointer">
       <span id="friend-online-txt">● Ami en ligne</span>
@@ -1631,6 +1654,7 @@
             if (s.exists()) usersCache2[id] = s.val();
           }));
           updateDock2();
+          updateFab();
           // Écouter les messages non lus pour le badge dans la navbar
           listenUnreadBadge();
         });
@@ -1649,11 +1673,15 @@
                 if (unread > 0) { badge.textContent = unread; badge.classList.add('show'); }
               }
               // Mettre à jour unread dans openChats
+              // Mettre à jour _fabUnread
+              const chatOpen = openChats2[fid] && !openChats2[fid].win.classList.contains('minimized');
+              _fabUnread[fid] = chatOpen ? 0 : unread;
               if (openChats2[fid]) {
                 const isMin = openChats2[fid].win.classList.contains('minimized');
                 if (isMin) { openChats2[fid].unread = unread; updateDock2(); }
-                else { markRead2(fid); }
+                else { markRead2(fid); _fabUnread[fid] = 0; }
               }
+              updateFab();
             });
           });
         }
@@ -1662,7 +1690,7 @@
           const dock = document.getElementById('chat-dock-acc');
           if (!dock) return;
           const entries = Object.entries(openChats2);
-          if (!entries.length) { dock.style.display = 'none'; return; }
+          if (!entries.length) { dock.style.display = 'none'; updateFab(); return; }
           dock.style.display = 'flex';
           dock.innerHTML = entries.map(([fid, chat]) => {
             const u = usersCache2[fid];
@@ -1678,7 +1706,80 @@
               <span style="font-size:0.52rem;color:#888;white-space:nowrap;max-width:48px;overflow:hidden;text-overflow:ellipsis">${esc2(u?.name||'?')}</span>
             </div>`;
           }).join('');
+          updateFab();
         }
+
+        // ── FAB + sélecteur d'amis ──────────────────────────────
+        let _fabUnread = {}; // fid → nb non lus
+
+        function updateFab() {
+          const fab = document.getElementById('chat-fab');
+          const badge = document.getElementById('chat-fab-badge');
+          if (!fab) return;
+          const hasFriends = friendsData.friends && friendsData.friends.length > 0;
+          fab.style.display = hasFriends ? 'flex' : 'none';
+          // Badge total non lus
+          const total = Object.values(_fabUnread).reduce((s,n)=>s+n,0);
+          if (badge) {
+            badge.style.display = total > 0 ? 'flex' : 'none';
+            badge.textContent = total > 99 ? '99+' : String(total);
+          }
+          // Remplir le picker
+          const picker = document.getElementById('chat-picker');
+          if (!picker) return;
+          const rows = friendsData.friends.map(fid => {
+            const u = usersCache2[fid] || {name:'?'};
+            const on = online2(fid);
+            const unread = _fabUnread[fid] || 0;
+            const isOpen = openChats2[fid] && !openChats2[fid].win.classList.contains('minimized');
+            return `<div class="cp-row${isOpen?' cp-row-open':''}" onclick="window._openChatFromFab('${fid}')">
+              <div style="position:relative;flex-shrink:0">
+                ${avatarHtml2(u,32)}
+                <span class="${on?'dot-on-sm':'dot-off-sm'}" style="position:absolute;bottom:0;right:-1px;border:2px solid #0e1118"></span>
+              </div>
+              <span class="cp-row-name">${esc2(u.name)}</span>
+              ${unread>0?`<span class="cp-row-unread">${unread}</span>`:''}
+            </div>`;
+          });
+          // Garder le titre, remplacer le reste
+          const title = picker.querySelector('#chat-picker-title');
+          if (title) {
+            picker.innerHTML = '';
+            picker.appendChild(title);
+          } else {
+            picker.innerHTML = '<div id="chat-picker-title">💬 Conversations</div>';
+          }
+          if (!rows.length) {
+            picker.insertAdjacentHTML('beforeend','<div class="cp-empty">Aucun ami pour l\'instant.</div>');
+          } else {
+            picker.insertAdjacentHTML('beforeend', rows.join(''));
+          }
+        }
+
+        window._openChatFromFab = function(fid) {
+          // Ouvrir/focus la fenêtre chat
+          if (openChats2[fid] && !openChats2[fid].win.classList.contains('minimized')) {
+            document.getElementById('cw-inp-'+fid)?.focus();
+          } else {
+            openChat2(fid);
+          }
+          document.getElementById('chat-picker')?.classList.remove('open');
+        };
+
+        window._toggleChatPicker = function() {
+          const picker = document.getElementById('chat-picker');
+          if (!picker) return;
+          const opening = !picker.classList.contains('open');
+          picker.classList.toggle('open');
+          if (opening) updateFab(); // rafraîchir la liste à l'ouverture
+        };
+
+        // Fermer le picker si clic dehors
+        document.addEventListener('click', function(e) {
+          if (!e.target.closest('#chat-fab')) {
+            document.getElementById('chat-picker')?.classList.remove('open');
+          }
+        });
 
         window._openChat2 = function(fid) { openChat2(fid); };
 
@@ -1816,6 +1917,7 @@
           });
           await Promise.all(tasks);
           if (openChats2[fid]) { openChats2[fid].unread = 0; updateDock2(); }
+          _fabUnread[fid] = 0; updateFab();
         }
 
         function scrollChat2(fid) {
