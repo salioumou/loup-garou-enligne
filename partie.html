@@ -1008,7 +1008,7 @@
               G.seqIdx = 0;
               G.activeSeq = (typeof NIGHT_SEQ !== "undefined") ? NIGHT_SEQ.filter((s) => {
                 if (s.first && G.turn > 1) return false;
-                if (!G.players.some((p) => p.role === s.r && G.alive[p.id])) return false;
+                if (!G.players.some((p) => p.role === s.r && isAlive(p.id))) return false;
                 if (s.r === "whitewolf" && G.turn % 2 !== 0) return false;
                 if (s.r === "witch") {
                   const hasPotion = (G.potions?.save !== false) || (G.potions?.kill !== false);
@@ -2401,7 +2401,7 @@ if (IS_HOST) {
           // Nuit 1 uniquement
           if (s.first && G.turn > 1) return false;
           // Le joueur avec ce rôle doit être vivant
-          if (!G.players.some((p) => p.role === s.r && G.alive[p.id])) return false;
+          if (!G.players.some((p) => p.role === s.r && isAlive(p.id))) return false;
           // Loup Blanc : seulement les nuits paires (tour 2, 4, 6…)
           if (s.r === "whitewolf" && G.turn % 2 !== 0) return false;
           // Sorcière : skip si les deux potions sont épuisées
@@ -2857,6 +2857,19 @@ if (IS_HOST) {
         // Voyante Bavarde : le message est déjà envoyé pendant la nuit via doAct
         // Pas besoin de le répéter au lever du jour
 
+        // Corbeau : annoncer la cible du +2 au lever du jour
+        if (IS_HOST && G.corbeauBonus && Object.keys(G.corbeauBonus).length > 0) {
+          Object.entries(G.corbeauBonus).forEach(([targetId, bonus]) => {
+            const target = G.players.find(p => p.id === targetId || toFirebaseKey(p.id) === targetId);
+            if (target && isAlive(target.id)) {
+              setTimeout(() => addChat(
+                `🪶 <strong>Le Corbeau</strong> a désigné <strong>${target.name}</strong> — il recevra <strong>+${bonus} votes</strong> lors du prochain scrutin !`,
+                true
+              ), 800);
+            }
+          });
+        }
+
         // Montreur d'Ours : annonce publique chaque matin
         const bearKeeper = G.players.find(p => p.role === "montreurdours" && G.alive[p.id] && !p.powerLost);
         if (bearKeeper) {
@@ -3055,12 +3068,15 @@ if (IS_HOST) {
         c.innerHTML = vot
           .map((p) => {
             const votesForP = G.votes
-              ? Object.values(G.votes).filter((v) => v === p.id).length
+              ? Object.values(G.votes).filter((v) => v === p.id || toFirebaseKey(v) === toFirebaseKey(p.id)).length
               : 0;
+            // Ajouter le bonus corbeau pour cet affichage
+            const corbeauBonus = (G.corbeauBonus && (G.corbeauBonus[p.id] || G.corbeauBonus[toFirebaseKey(p.id)])) || 0;
+            const votesTotal = votesForP + corbeauBonus;
             // FIX: utiliser isAlive() pour le total correct (gère les deux versions de clé)
             const totalVoters = G.players.filter((x) => isAlive(x.id)).length;
             const pct = Math.round(
-              (votesForP / Math.max(1, totalVoters)) * 100
+              (votesTotal / Math.max(1, totalVoters)) * 100
             );
             const iSelected = myVote === p.id;
             const _iAmAlive = isAlive(ME.id); // vérifie les deux versions de clé
@@ -3085,10 +3101,10 @@ if (IS_HOST) {
             </div>
             <div style="text-align:right;flex-shrink:0">
               <div style="color:${
-                votesForP > 0 ? "#be6d6d" : "#555"
+                votesTotal > 0 ? "#be6d6d" : "#555"
               };font-weight:${
-              votesForP > 0 ? "700" : "400"
-            };font-size:0.9rem">${votesForP} 🗳️</div>
+              votesTotal > 0 ? "700" : "400"
+            };font-size:0.9rem">${votesTotal}${corbeauBonus > 0 ? ` <span style="color:#8888ff;font-size:0.75rem">(+${corbeauBonus}🪶)</span>` : ''} 🗳️</div>
             </div>
           </div>`;
           })
