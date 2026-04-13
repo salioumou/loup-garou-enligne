@@ -1443,8 +1443,12 @@ if (IS_HOST) {
                 renderVoteSummary();
                 // FIX: résolution anticipée pour le second tour aussi - utiliser isAlive()
                 if (IS_HOST && G.isRunoff && !G._resolvingVotes) {
-                  const alivePlayers = G.players.filter(p => isAlive(p.id));
-                  if (Object.keys(G.votes).length >= alivePlayers.length && alivePlayers.length > 0) {
+                  const humanAlive2 = G.players.filter(p => isAlive(p.id) && !p.isBot);
+                  const humanVoted2 = humanAlive2.filter(p => {
+                    const safeP = toFirebaseKey(p.id);
+                    return G.votes[p.id] !== undefined || G.votes[safeP] !== undefined;
+                  }).length;
+                  if (humanVoted2 >= humanAlive2.length && humanAlive2.length > 0) {
                     G._resolvingVotes = true;
                     if (G.voteListener) { G.voteListener(); G.voteListener = null; }
                     resolveVotes();
@@ -2900,13 +2904,16 @@ if (IS_HOST) {
           G.votes = snap.exists() ? snap.val() : {};
           renderVoteList();
           renderVoteSummary();
-          // Résolution anticipée : si tous les vivants ont voté
+          // Résolution anticipée : seulement si tous les HUMAINS vivants ont voté
+          // (les bots votent automatiquement mais ne déclenchent pas la résolution anticipée)
           if (IS_HOST && G.voteStarted && !G._resolvingVotes) {
-            // FIX: utiliser isAlive() pour gérer les deux versions de clé (. et _)
-            const alivePlayers = G.players.filter(p => isAlive(p.id));
-            const votesGiven = Object.keys(G.votes).length;
-            if (votesGiven >= alivePlayers.length && alivePlayers.length > 0) {
-              G._resolvingVotes = true; // FIX: verrou anti-double résolution
+            const humanAlivePlayers = G.players.filter(p => isAlive(p.id) && !p.isBot);
+            const humanVotesGiven = humanAlivePlayers.filter(p => {
+              const safeP = toFirebaseKey(p.id);
+              return G.votes[p.id] !== undefined || G.votes[safeP] !== undefined;
+            }).length;
+            if (humanVotesGiven >= humanAlivePlayers.length && humanAlivePlayers.length > 0) {
+              G._resolvingVotes = true;
               clearInterval(G.ivals.vote);
               update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: 0 });
               if (G.voteListener) { G.voteListener(); G.voteListener = null; }
@@ -3161,8 +3168,8 @@ if (IS_HOST) {
         set(ref(db, "salons/" + SID + "/votes/" + safeId), G.selVote)
           .then(() => {
             G.hasVoted = true;
-            goTab("village", null);
-            showNotif("✅ Vote pour " + vName + " enregistré !");
+            showNotif("✅ Vote pour " + vName + " — modifiable jusqu'à la fin !");
+            // Ne pas fermer le panneau: le joueur peut changer son vote
           })
           .catch(() => showNotif("⚠️ Erreur réseau — réessayez"));
       };
