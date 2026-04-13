@@ -1173,6 +1173,18 @@ if (IS_HOST) {
             if (gs.grandMechantVictim && !G.grandMechantVictim) G.grandMechantVictim = gs.grandMechantVictim;
           }
 
+          // ── 4f. Non-hôte a fini son action → l'hôte avance immédiatement
+          if (IS_HOST && gs.nightActionDone && gs.nightActionDone !== G._lastNightActionDone) {
+            G._lastNightActionDone = gs.nightActionDone;
+            if (G.phase === "night" && !G._advancedThisStep) {
+              G._advancedThisStep = true;
+              clearInterval(_nightTimerInterval);
+              _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 400);
+            }
+          }
+
 
           // ── 5. Fin de partie
           if (gs.winner && !G.gameEnded) {
@@ -1443,12 +1455,12 @@ if (IS_HOST) {
                 renderVoteSummary();
                 // FIX: résolution anticipée pour le second tour aussi - utiliser isAlive()
                 if (IS_HOST && G.isRunoff && !G._resolvingVotes) {
-                  const humanAlive2 = G.players.filter(p => isAlive(p.id) && !p.isBot);
-                  const humanVoted2 = humanAlive2.filter(p => {
+                  const alivePlayers2 = G.players.filter(p => isAlive(p.id));
+                  const allVoted2 = alivePlayers2.every(p => {
                     const safeP = toFirebaseKey(p.id);
                     return G.votes[p.id] !== undefined || G.votes[safeP] !== undefined;
-                  }).length;
-                  if (humanVoted2 >= humanAlive2.length && humanAlive2.length > 0) {
+                  });
+                  if (allVoted2 && alivePlayers2.length > 0) {
                     G._resolvingVotes = true;
                     if (G.voteListener) { G.voteListener(); G.voteListener = null; }
                     resolveVotes();
@@ -2904,15 +2916,14 @@ if (IS_HOST) {
           G.votes = snap.exists() ? snap.val() : {};
           renderVoteList();
           renderVoteSummary();
-          // Résolution anticipée : seulement si tous les HUMAINS vivants ont voté
-          // (les bots votent automatiquement mais ne déclenchent pas la résolution anticipée)
+          // Résolution anticipée : quand TOUS les vivants ont voté (humains + bots)
           if (IS_HOST && G.voteStarted && !G._resolvingVotes) {
-            const humanAlivePlayers = G.players.filter(p => isAlive(p.id) && !p.isBot);
-            const humanVotesGiven = humanAlivePlayers.filter(p => {
+            const alivePlayers = G.players.filter(p => isAlive(p.id));
+            const allVoted = alivePlayers.every(p => {
               const safeP = toFirebaseKey(p.id);
               return G.votes[p.id] !== undefined || G.votes[safeP] !== undefined;
-            }).length;
-            if (humanVotesGiven >= humanAlivePlayers.length && humanAlivePlayers.length > 0) {
+            });
+            if (allVoted && alivePlayers.length > 0) {
               G._resolvingVotes = true;
               clearInterval(G.ivals.vote);
               update(ref(db, "salons/" + SID + "/gameState"), { voteCountdown: 0 });
@@ -3786,10 +3797,17 @@ if (IS_HOST) {
           renderAction();
           clearInterval(_nightTimerInterval);
           _nightTimerInterval = null;
-          if (IS_HOST && !G._advancedThisStep) {
-            G._advancedThisStep = true;
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-            setTimeout(() => advNight(), 600);
+          if (IS_HOST) {
+            if (!G._advancedThisStep) {
+              G._advancedThisStep = true;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 600);
+            }
+          } else {
+            update(ref(db, "salons/" + SID + "/gameState"), {
+              nightActionDone: Date.now(),
+              nightActionBy: ME.id
+            });
           }
           return;
         } else if (type === "seer") {
@@ -4050,13 +4068,21 @@ if (IS_HOST) {
         }
         G.actDone = true;
         renderAction();
-        // Stopper le timer immédiatement et avancer
+        // Stopper le timer et avancer immédiatement
         clearInterval(_nightTimerInterval);
         _nightTimerInterval = null;
-        if (IS_HOST && !G._advancedThisStep) {
-          G._advancedThisStep = true;
-          update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-          setTimeout(() => advNight(), 600);
+        if (IS_HOST) {
+          if (!G._advancedThisStep) {
+            G._advancedThisStep = true;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            setTimeout(() => advNight(), 600);
+          }
+        } else {
+          // Non-hôte: signaler à l'hôte que l'action est faite → il avancera
+          update(ref(db, "salons/" + SID + "/gameState"), {
+            nightActionDone: Date.now(),
+            nightActionBy: ME.id
+          });
         }
       };
 
