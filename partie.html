@@ -881,8 +881,12 @@
             Object.entries(gs.alive).forEach(([id, alive]) => {
               // FIX: toujours écrire - ne pas vérifier si la clé existait déjà
               G.alive[id] = alive;
+              // Synchroniser aussi la version avec points si différente
               const dotId = id.replace(/_/g, ".");
               if (dotId !== id) G.alive[dotId] = alive;
+              // Et la version safe de l'ID original du joueur
+              const player = G.players.find(p => toFirebaseKey(p.id) === id || p.id === id);
+              if (player && player.id !== id && player.id !== dotId) G.alive[player.id] = alive;
             });
           if (gs.phase) G.phase = gs.phase;
           if (gs.turn) G.turn = gs.turn;
@@ -3357,8 +3361,11 @@ if (IS_HOST) {
             cb && setTimeout(cb, 2000);
             return;
           }
-          if (elim && elim.role === "angel" && G.turn === 1) {
-            endGame(
+          if (elim && elim.role === "angel" && G.turn <= 2) {
+            // G.turn = 2 après la 1ère nuit (resolveNight fait G.turn++)
+            // L'Ange gagne s'il est éliminé au 1er vote du village (Jour 1)
+            kill(elim.id);
+            if (IS_HOST) endGame(
               "angel",
               "L'Ange a été éliminé au premier vote du village !"
             );
@@ -4171,7 +4178,16 @@ if (IS_HOST) {
       };
 
       function kill(id) {
+        // Marquer les deux formes de l'ID comme mort (avec/sans points)
         G.alive[id] = false;
+        const safeId = toFirebaseKey(id);
+        if (safeId !== id) G.alive[safeId] = false;
+        // Aussi retirer du tableau alive de Firebase si hôte
+        if (IS_HOST) {
+          const aliveUpdate = {};
+          aliveUpdate[safeId] = false;
+          update(ref(db, "salons/" + SID + "/gameState/alive"), aliveUpdate);
+        }
         soundDeath();
         renderPanels();
         renderInfoPlayers();
