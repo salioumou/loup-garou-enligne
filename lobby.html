@@ -1851,36 +1851,69 @@
       updateToggleStyle();
 
       window.startGame = async function () {
-        const snap = await get(salonRef);
-        if (!snap.exists()) return;
-        const salon = snap.val();
-        if (salon.players.length < 4) {
-          showNotif("Il faut au moins 4 joueurs !");
-          return;
+        // Verrou anti double-clic
+        const btn = document.getElementById('btn-start');
+        if (btn) { btn.disabled = true; btn.textContent = 'Lancement…'; }
+        try {
+          const snap = await get(salonRef);
+          if (!snap.exists()) return;
+          const salon = snap.val();
+          // Normaliser players en vrai tableau (Firebase peut retourner un objet)
+          if (!Array.isArray(salon.players)) {
+            salon.players = Object.values(salon.players || {});
+          }
+          if (salon.players.length < 4) {
+            showNotif("Il faut au moins 4 joueurs !");
+            return;
+          }
+          const n = salon.players.length;
+          // Construire le pool de rôles
+          const pool = [];
+          ROLES_CONFIG.forEach((r) => {
+            const cnt = Math.max(0, rolesCount[r.id] || 0);
+            for (let i = 0; i < cnt; i++) pool.push(r.id);
+          });
+          // Compléter avec des villageois si pool trop petit
+          while (pool.length < n) pool.push("villager");
+          // Fisher-Yates shuffle sur le pool complet
+          for (let i = pool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+          }
+          // Assigner les rôles aux joueurs (les n premiers du pool)
+          salon.players.forEach((p, i) => { p.role = pool[i]; });
+          // Stocker les cartes surplus pour le Voleur (pool[n..end])
+          salon.surplusRoles = pool.slice(n);
+          // Vérification: s'assurer qu'aucun rôle unique n'est dupliqué
+          const uniqueRoles = ['seer','voyantebavarde','witch','hunter','savior',
+            'cupid','corbeau','angel','thief','littlegirl','ancien','idiot',
+            'montreurdours','enfantsauvage','joueurdeflute','whitewolf','grandmechant',
+            'boucemissaire','chienloup'];
+          const roleCounts = {};
+          salon.players.forEach(p => {
+            roleCounts[p.role] = (roleCounts[p.role] || 0) + 1;
+          });
+          const dupRoles = uniqueRoles.filter(r => (roleCounts[r] || 0) > 1);
+          if (dupRoles.length > 0) {
+            // Re-corriger les doublons: remplacer les copies par des villageois
+            const seen = new Set();
+            salon.players.forEach(p => {
+              if (uniqueRoles.includes(p.role)) {
+                if (seen.has(p.role)) { p.role = 'villager'; }
+                else { seen.add(p.role); }
+              }
+            });
+          }
+          salon.status = "started";
+          salon.phase = "day";
+          salon.turn = 1;
+          if (!salon.config) {
+            salon.config = { dayDuration: 180, voteDuration: 60, allowBlank: true };
+          }
+          await set(salonRef, salon);
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = 'Lancer la partie'; }
         }
-        const n = salon.players.length;
-        const pool = [];
-        ROLES_CONFIG.forEach((r) => {
-          for (let i = 0; i < rolesCount[r.id]; i++) pool.push(r.id);
-        });
-        while (pool.length < n) pool.push("villager");
-        for (let i = pool.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [pool[i], pool[j]] = [pool[j], pool[i]];
-        }
-        salon.players.forEach((p, i) => (p.role = pool[i]));
-        salon.status = "started";
-        salon.phase = "day";
-        salon.turn = 1;
-        // S'assurer que la config est présente
-        if (!salon.config) {
-          salon.config = {
-            dayDuration: 180,
-            voteDuration: 60,
-            allowBlank: true,
-          };
-        }
-        await set(salonRef, salon);
       };
 
       async function addBotsGradually(salon) {
