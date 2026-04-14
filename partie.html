@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="fr">
   <head>
@@ -832,18 +833,17 @@
           if (uid_ !== p.id) G.alive[uid_] = true;
         });
         if (G.myRole === "thief") {
-          // VOLEUR FIX : garantir que les 2 cartes surplus sont TOUJOURS différentes
+          // Utiliser les surplusRoles envoyés par le lobby (pool.slice(n))
           let _sr = sal.surplusRoles ? [...sal.surplusRoles] : [];
-          // Si moins de 2 cartes ou les 2 cartes sont identiques → corriger
+          // Fallback si surplus manquants: prendre des rôles NON utilisés
           if (_sr.length < 2 || _sr[0] === _sr[1]) {
-            // Liste des rôles utilisés dans la partie (pour éviter doublons)
             const _usedRoles = new Set(G.players.map(p => p.role));
-            // Préférer des rôles intéressants différents entre eux
-            const _candidates = ["seer","hunter","witch","savior","cupid","villager","wolf","littlegirl","corbeau","ancien"];
-            // Prendre le premier disponible comme carte A
-            const _roleA = _sr[0] || _candidates.find(r => true) || "villager";
-            // Prendre comme carte B le premier candidat DIFFÉRENT de A
-            const _roleB = _candidates.find(r => r !== _roleA) || (_roleA === "villager" ? "seer" : "villager");
+            const _candidates = ["seer","hunter","witch","savior","cupid","villager",
+              "wolf","littlegirl","corbeau","ancien","savior","montreurdours"];
+            // Cartes A et B: différentes entre elles ET différentes des rôles attribués
+            const _free = _candidates.filter(r => !_usedRoles.has(r));
+            const _roleA = _sr[0] || _free[0] || "villager";
+            const _roleB = _free.find(r => r !== _roleA) || "villager";
             _sr = [_roleA, _roleB];
           }
           G.surplusRoles = _sr;
