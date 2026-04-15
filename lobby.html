@@ -1383,17 +1383,19 @@
               }
             </div>
             <div style="display:flex;gap:2px;margin-top:4px;padding:0 2px 2px">
-              <button onclick="changeRole('${r.id}',-1)" style="
-                flex:1;height:26px;border-radius:6px;border:1px solid #444;
+              <button onclick="changeRole('${r.id}',-1)"
+                ${!isHost || count <= r.min ? 'disabled' : ''}
+                style="flex:1;height:26px;border-radius:6px;border:1px solid #444;
                 background:#1c2230;color:#fff;font-size:1rem;font-weight:700;
-                cursor:pointer;transition:0.15s;line-height:1;
-                ${count <= r.min ? "opacity:0.3;cursor:not-allowed" : ""}
+                cursor:${isHost && count > r.min ? 'pointer' : 'not-allowed'};transition:0.15s;line-height:1;
+                opacity:${!isHost || count <= r.min ? 0.3 : 1}
               ">−</button>
-              <button onclick="changeRole('${r.id}',+1)" style="
-                flex:1;height:26px;border-radius:6px;border:1px solid #444;
+              <button onclick="changeRole('${r.id}',+1)"
+                ${!isHost || count >= r.max ? 'disabled' : ''}
+                style="flex:1;height:26px;border-radius:6px;border:1px solid #444;
                 background:#1c2230;color:#fff;font-size:1rem;font-weight:700;
-                cursor:pointer;transition:0.15s;line-height:1;
-                ${count >= r.max ? "opacity:0.3;cursor:not-allowed" : ""}
+                cursor:${isHost && count < r.max ? 'pointer' : 'not-allowed'};transition:0.15s;line-height:1;
+                opacity:${!isHost || count >= r.max ? 0.3 : 1}
               ">+</button>
             </div>
           </div>`;
@@ -1402,6 +1404,7 @@
       }
 
       window.changeRole = function (id, delta) {
+        if (!isHost) return; // seul l'hôte peut modifier les rôles
         const r = ROLES_CONFIG.find((x) => x.id === id);
         if (!r) return;
         const newVal = Math.min(r.max, Math.max(r.min, rolesCount[id] + delta));
@@ -1588,6 +1591,7 @@
       }
 
       window.autoAdjust = function () {
+        if (!isHost) return;
         const players = parseInt(
           document.getElementById("total-players")?.textContent || "1"
         );
