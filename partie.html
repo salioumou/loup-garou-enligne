@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="fr">
   <head>
@@ -789,6 +788,8 @@
         ivals: { main: null, vote: null, action: null, voteOverlay: null },
         chatCount: 0,
         _lastNightStepKey: null,
+        _lastHunterPending: null,
+        _lastHunterTarget: null,
         voteListener: null,
         votes: {},
         allowBots: true,
@@ -1189,6 +1190,27 @@ if (IS_HOST) {
             }
           }
 
+
+          // ── 4g. Chasseur: non-hôte reçoit hunterPending → ouvre UI
+          //        hôte reçoit hunterTarget → exécute le tir
+          if (gs.hunterPending && gs.hunterPending !== G._lastHunterPending) {
+            G._lastHunterPending = gs.hunterPending;
+            if (!IS_HOST && gs.hunterPending === ME.id) {
+              // Je suis le chasseur non-hôte → ouvrir l'UI de sélection
+              _openHunterUI(ME.id);
+            }
+          }
+          if (IS_HOST && gs.hunterTarget && gs.hunterTarget !== G._lastHunterTarget) {
+            G._lastHunterTarget = gs.hunterTarget;
+            if (gs.hunterTarget === "__none__") {
+              // Chasseur n'a tué personne → continuer
+              update(ref(db, "salons/" + SID + "/gameState"), { hunterPending: null, hunterTarget: null });
+              if (window._hcb) window._hcb();
+            } else {
+              const ht = G.players.find(p => p.id === gs.hunterTarget || toFirebaseKey(p.id) === gs.hunterTarget);
+              if (ht) _execHunterShoot(ht);
+            }
+          }
 
           // ── 5. Fin de partie
           if (gs.winner && !G.gameEnded) {
@@ -2889,7 +2911,22 @@ if (IS_HOST) {
               : "🐻 L'ours est resté <strong>silencieux</strong> cette nuit.",
             true
           ), 600);
-          if (growls) setTimeout(function(){ broadcastSound("grognement"); }, 700);
+          if (growls) {
+            // Jouer le grognement APRÈS la fin du coq (~5s)
+            // pour ne pas se superposer avec startDayMusic
+            setTimeout(function(){
+              // Couper la musique de fond momentanément, gronder, reprendre
+              if (!musicMuted) pauseAllMusic();
+              broadcastSound("grognement");
+              // Reprendre la musique jour après le grognement (~2s)
+              setTimeout(function(){
+                if (!musicMuted && currentMusic !== "day") {
+                  _safePlay("day", { isBg: true });
+                  currentMusic = "day";
+                }
+              }, 2200);
+            }, 5500);
+          }
         }
         setPhaseInfo("☀️ Phase de discussion — débattez !");
         goTab("village", document.getElementById("tbtn-village"));
@@ -4128,54 +4165,82 @@ if (IS_HOST) {
       };
 
       function fireHunter(hunter, cb) {
+        window._hcb = cb;
         if (hunter.id === ME.id) {
-          const alive = G.players.filter(
-            (p) => isAlive(p.id) && p.id !== ME.id
-          );
-          const btns = alive
-            .map(
-              (p) =>
-                `<button class="btn secondary" style="margin:3px;font-size:0.82rem" onclick="hunterShoot('${p.id}')">${p.name}</button>`
-            )
-            .join("");
-          showOverlay(
-            "🏹",
-            "Le Chasseur tire !",
-            "Avant de mourir, choisissez votre cible :",
-            0,
-            btns,
-            null
-          );
-          window._hcb = cb;
-        } else {
-          addChat(
-            "🏹 <em>Le Chasseur peut emporter quelqu'un avec lui...</em>",
-            true
-          );
-          setTimeout(cb, 2500);
+          // C'est MOI le chasseur → ouvrir l'UI de sélection avec chrono 12s
+          _openHunterUI(hunter.id);
+        } else if (IS_HOST) {
+          // L'hôte signale via Firebase que le chasseur doit tirer
+          addChat("🏹 <em>Le Chasseur peut emporter quelqu'un avec lui...</em>", true);
+          update(ref(db, "salons/" + SID + "/gameState"), {
+            hunterPending: hunter.id,
+            hunterTarget: null,
+            hunterTs: Date.now()
+          });
+          // L'hôte attend hunterTarget via onValue (handler section 4g)
         }
+      }
+
+      function _openHunterUI(hunterId) {
+        const alive = G.players.filter(p => isAlive(p.id) && p.id !== hunterId);
+        const btns = alive.map(p =>
+          `<button class="btn secondary" style="margin:3px;font-size:0.82rem"
+            onclick="hunterShoot('${p.id}')">🎯 ${p.name}</button>`
+        ).join("");
+        // Chrono 12s visible avec showOverlay
+        showOverlay("🏹", "Le Chasseur tire !",
+          "Avant de mourir, choisissez votre cible (12s) :", 12, btns,
+          function() {
+            // Temps écoulé sans choix → tir aléatoire
+            if (alive.length > 0) {
+              const rnd = alive[Math.floor(Math.random() * alive.length)];
+              hunterShoot(rnd.id);
+            } else {
+              // Personne à tuer → continuer
+              if (IS_HOST && window._hcb) window._hcb();
+              else if (!IS_HOST) {
+                update(ref(db, "salons/" + SID + "/gameState"), { hunterTarget: "__none__" });
+              }
+            }
+          }
+        );
       }
 
       window.hunterShoot = function (id) {
         document.getElementById("overlay").classList.remove("show");
         const t = G.players.find((p) => p.id === id);
         if (!t) return;
-        broadcastSound("chasseur");
-        kill(id);
-        addJournal("Chasseur : abat " + t.name);
-        // FIX: synchroniser la mort dans Firebase pour que tous les joueurs la voient
-        addChat(`🏹 <strong>Le Chasseur</strong> emporte <strong>${t.name}</strong> dans sa chute !`, true);
         if (IS_HOST) {
-          const aliveAfter = safeAlive(G.alive);
-          update(ref(db, "salons/" + SID + "/gameState"), { alive: aliveAfter });
+          // L'hôte exécute directement le tir
+          _execHunterShoot(t);
+        } else {
+          // Non-hôte: signaler le choix à l'hôte via Firebase
+          update(ref(db, "salons/" + SID + "/gameState"), {
+            hunterTarget: id,
+            hunterPending: null
+          });
+          // L'hôte verra hunterTarget et exécutera le tir
         }
+      };
+
+      function _execHunterShoot(t) {
+        broadcastSound("chasseur");
+        kill(t.id);
+        addJournal("Chasseur : abat " + t.name);
+        addChat(`🏹 <strong>Le Chasseur</strong> emporte <strong>${t.name}</strong> dans sa chute !`, true);
+        const aliveAfter = safeAlive(G.alive);
+        update(ref(db, "salons/" + SID + "/gameState"), {
+          alive: aliveAfter,
+          hunterPending: null,
+          hunterTarget: null
+        });
         renderPanels();
         renderInfoPlayers();
         showDeathScreen(t, "abattu par le Chasseur", () => {
           checkWin();
           if (window._hcb) window._hcb();
         });
-      };
+      }
 
       function kill(id) {
         // Marquer les deux formes de l'ID comme mort (avec/sans points)
