@@ -1183,11 +1183,12 @@ if (IS_HOST) {
             G._lastNightActionDone = gs.nightActionDone;
             if (G.phase === "night" && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true;
-              _advNightPending = true; // FIX: acquérir le verrou avant d'appeler advNight
-              clearInterval(_nightTimerInterval);
-              _nightTimerInterval = null;
+              _advNightPending = true;
+              // Forcer countdown=0 → le setInterval de _showNightTimer appellera advNight
+              // mais comme on a déjà les flags, on appelle directement pour plus de réactivité
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
               update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-              setTimeout(() => advNight(), 400);
+              setTimeout(() => advNight(), 300);
             }
           }
 
@@ -2487,6 +2488,7 @@ if (IS_HOST) {
         // Écrire dans Firebase pour les non-hôtes
         const stepStart = Date.now();
         G._curStepStart = stepStart;
+        G._nonHostActionSent = false; // FIX: reset pour la nouvelle étape
         const alive = {};
         Object.keys(G.alive).forEach(k => { alive[toFirebaseKey(k)] = G.alive[k]; });
         update(ref(db, "salons/" + SID + "/gameState"), {
@@ -2570,14 +2572,13 @@ if (IS_HOST) {
               addChatLocal("⏰ Temps écoulé.");
               G.actDone = true;
             }
-            // NE PAS appeler advNight ici — _showNightTimer le fait pour l'hôte
-            // Les non-hôtes ferment juste leur UI
+            // Fermer l'UI action pour tout le monde quand le countdown arrive à 0
+            G.forceAction = false;
+            const _wp4 = document.getElementById("wolf-private");
+            if (_wp4) _wp4.style.display = "none";
+            const _ab4 = document.getElementById("wolf-attack-btn");
+            if (_ab4) _ab4.style.display = "none";
             if (!IS_HOST) {
-              G.forceAction = false;
-              const _wp4 = document.getElementById("wolf-private");
-              if (_wp4) _wp4.style.display = "none";
-              const _ab4 = document.getElementById("wolf-attack-btn");
-              if (_ab4) _ab4.style.display = "none";
               G.chatOn = false; updateChat();
               goTab("village", null);
             }
@@ -3496,8 +3497,15 @@ if (IS_HOST) {
           desc.textContent = "L'Ancien a été exécuté — vous avez perdu vos pouvoirs.";
           area.innerHTML = "<p style='color:#be6d6d;font-style:italic'>💀 Vos pouvoirs ont disparu — l'Ancien a été exécuté par le village.</p>";
           clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-          if (IS_HOST && !G._advancedThisStep) { G._advancedThisStep = true; update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 }); setTimeout(() => advNight(), 600); }
-          else if (!IS_HOST) { update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id }); }
+          if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+            G._advancedThisStep = true; _advNightPending = true;
+            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            setTimeout(() => advNight(), 300);
+          } else if (!IS_HOST && !G._nonHostActionSent) {
+            G._nonHostActionSent = true;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id });
+          }
           return;
         }
         const r = RDATA[G.myRole] || RDATA.villager;
@@ -3554,8 +3562,15 @@ if (IS_HOST) {
             area.innerHTML =
               '<p style="color:#555;font-style:italic">Déjà utilisé.</p>';
             clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-            if (IS_HOST && !G._advancedThisStep) { G._advancedThisStep = true; update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 }); setTimeout(() => advNight(), 600); }
-            else if (!IS_HOST) { update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id }); }
+            if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+            G._advancedThisStep = true; _advNightPending = true;
+            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            setTimeout(() => advNight(), 300);
+          } else if (!IS_HOST && !G._nonHostActionSent) {
+            G._nonHostActionSent = true;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id });
+          }
           }
         } else if (G.myRole === "littlegirl") {
           title.innerHTML = cardThumb + "👧 Espionnage (15s)";
@@ -3588,7 +3603,12 @@ if (IS_HOST) {
             if (!wolves.length) {
               desc.textContent = "Aucun autre loup vivant à éliminer.";
               area.innerHTML = `<p style="color:#555;font-style:italic">Vous êtes le seul loup restant…</p>`;
-              setTimeout(() => advNight(), 1500);
+              if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+              G._advancedThisStep = true; _advNightPending = true;
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            }
             } else {
             const wolfTgts = wolves
               .map(
@@ -3610,7 +3630,12 @@ if (IS_HOST) {
           } else {
             desc.textContent = "Le Loup Blanc n'agit que les nuits paires.";
             area.innerHTML = `<p style="color:#555;font-style:italic">Attendez votre prochain tour…</p>`;
-            setTimeout(() => advNight(), 1000);
+            if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+              G._advancedThisStep = true; _advNightPending = true;
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            }
           }
         } else if (G.myRole === "grandmechant") {
           title.innerHTML = cardThumb + "😈 Grand Méchant Loup (20s)";
@@ -3624,7 +3649,12 @@ if (IS_HOST) {
               <button class="btn secondary full" style="margin-top:4px" onclick="doAct('pass')">Ne pas agir</button>`;
           } else {
             area.innerHTML = `<p style="color:#555;font-style:italic">Pouvoir déjà utilisé ce tour.</p>`;
-            setTimeout(() => advNight(), 1000);
+            if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+              G._advancedThisStep = true; _advNightPending = true;
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            }
           }
         } else if (G.myRole === "enfantsauvage") {
           title.innerHTML = cardThumb + "🏹 Enfant Sauvage (15s)";
@@ -3647,10 +3677,20 @@ if (IS_HOST) {
                 ? "🐺 Vous rejoignez les loups !"
                 : "🌱 Votre modèle vit encore."
             }</p>`;
-            setTimeout(() => advNight(), 1500);
+            if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+              G._advancedThisStep = true; _advNightPending = true;
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            }
           } else {
             area.innerHTML = `<p style="color:#555;font-style:italic">Dormez paisiblement…</p>`;
-            setTimeout(() => advNight(), 1000);
+            if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+              G._advancedThisStep = true; _advNightPending = true;
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            }
           }
         } else if (G.myRole === "montreurdours") {
           title.innerHTML = cardThumb + "🐻 Montreur d'Ours (15s)";
@@ -3698,7 +3738,12 @@ if (IS_HOST) {
           if (uncharmable.length < 2) {
             desc.textContent = "Tout le monde est déjà charmé !";
             area.innerHTML = `<p style="color:#888;font-style:italic">Vous avez charmé tous les joueurs vivants.</p>`;
-            setTimeout(() => advNight(), 1500);
+            if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+              G._advancedThisStep = true; _advNightPending = true;
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            }
           } else {
             desc.textContent =
               "Charmez 2 joueurs cette nuit (cliquez sur 2 joueurs) :";
@@ -3752,7 +3797,12 @@ if (IS_HOST) {
           } else {
             desc.textContent = "Le Voleur n'agit qu'à la 1ère nuit.";
             area.innerHTML = `<p style="color:#555;font-style:italic">Vous avez déjà choisi votre rôle.</p>`;
-            setTimeout(() => advNight(), 1000);
+            if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+              G._advancedThisStep = true; _advNightPending = true;
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            }
           }
         } else if (G.myRole === "ancient" || G.myRole === "ancien") {
           title.innerHTML = cardThumb + "🧓 L'Ancien (15s)";
@@ -3784,7 +3834,12 @@ if (IS_HOST) {
             const campLabel = G._chienloupCamp === "wolf" ? "🐺 Loups" : "🌾 Village";
             desc.textContent = G._chienloupChosen ? `Camp choisi : ${campLabel}` : "Chien-Loup n'agit qu'à la 1ère nuit.";
             area.innerHTML = `<p style="color:#888;font-style:italic">Votre camp est fixé.</p>`;
-            setTimeout(() => advNight(), 1000);
+            if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+              G._advancedThisStep = true; _advNightPending = true;
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            }
           }
         } else if (G.myRole === "boucemissaire") {
           title.innerHTML = cardThumb + "🐐 Bouc Émissaire (15s)";
@@ -3865,15 +3920,14 @@ if (IS_HOST) {
           addJournal("Loups : cible " + t.name + " (nuit " + G.turn + ")");
           G.actDone = true;
           renderAction();
-          clearInterval(_nightTimerInterval);
-          _nightTimerInterval = null;
-          if (IS_HOST) {
-            if (!G._advancedThisStep) {
-              G._advancedThisStep = true;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-              setTimeout(() => advNight(), 600);
-            }
-          } else {
+          if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+            G._advancedThisStep = true;
+            _advNightPending = true;
+            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            setTimeout(() => advNight(), 300);
+          } else if (!IS_HOST && !G._nonHostActionSent) {
+            G._nonHostActionSent = true;
             update(ref(db, "salons/" + SID + "/gameState"), {
               nightActionDone: Date.now(),
               nightActionBy: ME.id
@@ -3948,13 +4002,18 @@ if (IS_HOST) {
           });
           addJournal("Voyante Bavarde : révèle " + roleName + (isWolf ? " (Loup)" : " (Village)"));
           G.actDone = true;
-          // Stopper le timer immédiatement et avancer
-          clearInterval(_nightTimerInterval);
-          _nightTimerInterval = null;
-          if (IS_HOST && !G._advancedThisStep) {
+          // Signaler que l'action est terminée (même chemin que le code commun)
+          if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
             G._advancedThisStep = true;
+            _advNightPending = true;
+            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
             update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-            setTimeout(() => advNight(), 600);
+            setTimeout(() => advNight(), 300);
+          } else if (!IS_HOST && !G._nonHostActionSent) {
+            G._nonHostActionSent = true;
+            update(ref(db, "salons/" + SID + "/gameState"), {
+              nightActionDone: Date.now(), nightActionBy: ME.id
+            });
           }
         } else if (type === "thief") {
           const idx3 = G.thiefChoice;
@@ -4062,7 +4121,15 @@ if (IS_HOST) {
           }
           G.actDone = true;
           renderAction();
-          setTimeout(advNight, 800);
+          if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+            G._advancedThisStep = true; _advNightPending = true;
+            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            setTimeout(() => advNight(), 300);
+          } else if (!IS_HOST && !G._nonHostActionSent) {
+            G._nonHostActionSent = true;
+            update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id });
+          }
           return;
         } else if (type === "joueurdeflute") {
           const targets = G.fluteTargets || [];
@@ -4138,21 +4205,25 @@ if (IS_HOST) {
         }
         G.actDone = true;
         renderAction();
-        // Stopper le timer et avancer immédiatement
-        clearInterval(_nightTimerInterval);
-        _nightTimerInterval = null;
+        // Signaler que l'action est terminée → le timer se charge de l'avancement
         if (IS_HOST) {
-          if (!G._advancedThisStep) {
+          if (!G._advancedThisStep && !_advNightPending) {
+            // Forcer le countdown à 0 → le setInterval de _showNightTimer appellera advNight
             G._advancedThisStep = true;
+            _advNightPending = true;
+            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
             update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-            setTimeout(() => advNight(), 600);
+            setTimeout(() => advNight(), 300);
           }
         } else {
           // Non-hôte: signaler à l'hôte que l'action est faite → il avancera
-          update(ref(db, "salons/" + SID + "/gameState"), {
-            nightActionDone: Date.now(),
-            nightActionBy: ME.id
-          });
+          if (!G._nonHostActionSent) {
+            G._nonHostActionSent = true;
+            update(ref(db, "salons/" + SID + "/gameState"), {
+              nightActionDone: Date.now(),
+              nightActionBy: ME.id
+            });
+          }
         }
       };
 
@@ -5236,27 +5307,39 @@ if (IS_HOST) {
       }
 
       // Appelé par l'hôte dans nextNightStep() — il écrit nightStepCountdown chaque seconde
+      // UID de l'étape courante — empêche un listener de l'étape N de déclencher l'étape N+1
+      let _currentStepUid = 0;
+
       window._showNightTimer = function(label, tsStart, duration, roleImg) {
+        // Invalider l'étape précédente
+        _currentStepUid++;
+        const myUid = _currentStepUid;
+
         clearInterval(_nightTimerInterval);
+        _nightTimerInterval = null;
         if (_nightCountdownUnsub) { _nightCountdownUnsub(); _nightCountdownUnsub = null; }
 
         if (IS_HOST) {
-          let rem = duration;
-          let _advCalled = false;
+          // Calculer le temps restant depuis tsStart (résistant aux reconnexions)
+          let rem = Math.max(0, duration - Math.floor((Date.now() - tsStart) / 1000));
           _renderNightBanner(label, rem, duration, roleImg);
+
+          // Écrire immédiatement la valeur courante
+          update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: rem });
+
           _nightTimerInterval = setInterval(() => {
-            rem--;
-            const remSafe = Math.max(0, rem);
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: remSafe });
-            _renderNightBanner(label, remSafe, duration, roleImg);
-            if (remSafe <= 0 && !_advCalled) {
-              _advCalled = true;
-              clearInterval(_nightTimerInterval);
-              _nightTimerInterval = null;
-              // FIX: ne pas avancer si advNight a déjà été appelé pour cette étape
-              if (!G._advancedThisStep) {
+            if (_currentStepUid !== myUid) {
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null; return;
+            }
+            rem = Math.max(0, duration - Math.floor((Date.now() - tsStart) / 1000));
+            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: rem });
+            _renderNightBanner(label, rem, duration, roleImg);
+            if (rem <= 0) {
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              if (!G._advancedThisStep && !_advNightPending) {
                 G._advancedThisStep = true;
-                setTimeout(() => advNight(), 400);
+                _advNightPending = true;
+                setTimeout(() => advNight(), 300);
               }
             }
           }, 1000);
@@ -5265,8 +5348,12 @@ if (IS_HOST) {
           _renderNightBanner(label, duration, duration, roleImg);
           const _cdRef2 = ref(db, "salons/" + SID + "/gameState/nightStepCountdown");
           _nightCountdownUnsub = onValue(_cdRef2, (snap) => {
-            if (!snap.exists()) return;
-            const rem = snap.val();
+            if (_currentStepUid !== myUid) {
+              if (_nightCountdownUnsub) { _nightCountdownUnsub(); _nightCountdownUnsub = null; }
+              return;
+            }
+            if (!snap.exists() || snap.val() === null) return;
+            const rem = Math.max(0, snap.val());
             _renderNightBanner(label, rem, duration, roleImg);
           });
         }
