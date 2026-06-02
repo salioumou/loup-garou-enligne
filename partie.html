@@ -1181,8 +1181,9 @@ if (IS_HOST) {
           // ── 4f. Non-hôte a fini son action → l'hôte avance immédiatement
           if (IS_HOST && gs.nightActionDone && gs.nightActionDone !== G._lastNightActionDone) {
             G._lastNightActionDone = gs.nightActionDone;
-            if (G.phase === "night" && !G._advancedThisStep) {
+            if (G.phase === "night" && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true;
+              _advNightPending = true; // FIX: acquérir le verrou avant d'appeler advNight
               clearInterval(_nightTimerInterval);
               _nightTimerInterval = null;
               update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
@@ -1304,6 +1305,8 @@ if (IS_HOST) {
               G.voteStarted = false;
               G._nightRunning = false;
               G._resolvingVotes = false;
+              G._advancedThisStep = false; // FIX: reset pour le prochain tour de nuit
+              _advNightPending = false;     // FIX: reset verrou
               if (gs.turn && gs.turn !== G.turn) { G.turn = gs.turn; updateUI(); }
               const _npD = document.getElementById("night-panel");
               if (_npD) _npD.style.display = "none";
@@ -1429,39 +1432,26 @@ if (IS_HOST) {
               });
               renderPanels(); renderInfoPlayers();
               if (deadList.length === 0) {
-                // Pas de morts : appliquer la transition jour immédiatement
+                // Pas de morts : musique + libérer _nightRunning
+                // La transition complète sera faite par le handler phase:"day" via onValue
                 _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
                 G._nightRunning = false;
-                G.chatOn = true;
-                updateChat();
-                G.voteStarted = false;
                 const _np0 = document.getElementById("night-panel");
                 if (_np0) _np0.style.display = "none";
                 const _wp0 = document.getElementById("wolf-private");
                 if (_wp0) _wp0.style.display = "none";
-                const _mc0 = document.getElementById("main-cbar");
-                if (_mc0) _mc0.style.display = "block";
-                const _cl0 = document.getElementById("cbar-label");
-                if (_cl0) _cl0.textContent = "☀️ Discussion";
-                setPageBg("day");
-                updateUI();
-                // Le timer démarrera quand phaseStart arrivera via onValue (handler phase:"day")
               } else {
                 showNightBilan(deadList, () => {
-                  // Après le bilan : musique + transition jour
+                  // Après le bilan : juste la musique + libérer _nightRunning
+                  // La transition complète (chatOn, updateUI, timer) sera faite
+                  // par le handler phase:"day" via onValue — évite la double transition
                   _loadSoundsJs(function() { if (!musicMuted) startDayMusic(); });
                   G._nightRunning = false;
-                  // Appliquer la transition jour côté non-hôte
-                  G.chatOn = true;
-                  updateChat();
-                  G.voteStarted = false;
+                  // Masquer le panneau nuit mais laisser le reste au handler onValue
                   const _np = document.getElementById("night-panel");
                   if (_np) _np.style.display = "none";
                   const _wp = document.getElementById("wolf-private");
                   if (_wp) _wp.style.display = "none";
-                  setPageBg("day");
-                  updateUI();
-                  // L'hôte écrira phase:"day" dans Firebase → le timer démarrera via onValue
                 });
               }
             }
@@ -2389,6 +2379,8 @@ if (IS_HOST) {
         G.grandMechantVictim = null;
         G.fluteTargets = [];
         G.seqIdx = 0;
+        G._advancedThisStep = false; // FIX: reset pour éviter blocage hôte
+        _advNightPending = false;    // FIX: reset verrou advNight
         G.chatOn = false;
         updateChat();
         updateUI();
@@ -4788,15 +4780,8 @@ if (IS_HOST) {
       }
 
       function scheduleBotsNight() {
-        const wolfBots = G.players.filter(
-          (p) => p.isBot && p.role === "wolf" && isAlive(p.id)
-        );
-        wolfBots.forEach((bot, i) => {
-          setTimeout(() => {
-            if (!isAlive(bot.id) || G.phase !== "night") return;
-            addChat(getBotMessage(bot, "night"), false, bot.name);
-          }, (i + 1) * 3000 + Math.random() * 4000);
-        });
+        // Les bots ne parlent PAS pendant la nuit — ni dans le chat public ni privé
+        // Leur action (attaque) est gérée directement dans resolveNight via G.victim
       }
 
       function scheduleBotsVote() {
