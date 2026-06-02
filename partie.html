@@ -1184,10 +1184,11 @@ if (IS_HOST) {
             if (G.phase === "night" && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true;
               _advNightPending = true;
-              // Forcer countdown=0 → le setInterval de _showNightTimer appellera advNight
-              // mais comme on a déjà les flags, on appelle directement pour plus de réactivité
+              _nightStepEndTs = Date.now(); // forcer fin immédiate du timer local hôte
               clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              update(ref(db, "salons/" + SID + "/gameState"), {
+                nightStepEndTs: Date.now(), nightStepCountdown: 0
+              });
               setTimeout(() => advNight(), 300);
             }
           }
@@ -1371,10 +1372,11 @@ if (IS_HOST) {
             if (stepKey !== _lastNightStepKey) {
               _lastNightStepKey = stepKey;
 
-              // Démarrer le bandeau timer
+              // Démarrer le bandeau timer (basé sur nightStepEndTs pour synchronisation parfaite)
               if (window._showNightTimer) {
                 const seq2 = (typeof NIGHT_SEQ !== "undefined") ? NIGHT_SEQ.find(s => s.l === gs.nightStepLabel) : null;
-                window._showNightTimer(gs.nightStepLabel, gs.nightStepStart, gs.nightStepDuration, seq2 ? seq2.img : null);
+                const endTs = gs.nightStepEndTs || (gs.nightStepStart + (gs.nightStepDuration||15)*1000 + 2300);
+                window._showNightTimer(gs.nightStepLabel, endTs, gs.nightStepDuration || 15, seq2 ? seq2.img : null);
               }
 
               const isMyStep = gs.nightStepRole === G.myRole;
@@ -2486,17 +2488,20 @@ if (IS_HOST) {
         updateChat();
 
         // Écrire dans Firebase pour les non-hôtes
-        const stepStart = Date.now();
-        G._curStepStart = stepStart;
-        G._nonHostActionSent = false; // FIX: reset pour la nouvelle étape
+        // Le timer commence APRÈS la transition (2.2s) pour éviter le timeout pendant la transition
+        const TRANSITION_MS = 2300; // durée de showNightTransition
+        const stepEndTs = Date.now() + TRANSITION_MS + cur.s * 1000;
+        G._curStepStart = Date.now();
+        G._nonHostActionSent = false;
         const alive = {};
         Object.keys(G.alive).forEach(k => { alive[toFirebaseKey(k)] = G.alive[k]; });
         update(ref(db, "salons/" + SID + "/gameState"), {
           nightStepRole: cur.r,
           nightStepLabel: cur.l,
           nightStepDuration: cur.s,
-          nightStepStart: stepStart,
-          nightStartTs: G._currentNightTs || stepStart,
+          nightStepStart: Date.now(),
+          nightStepEndTs: stepEndTs,   // timestamp de fin absolu
+          nightStartTs: G._currentNightTs || Date.now(),
           nightStepCountdown: cur.s,
           nightActionDone: null,
           nightActionBy: null,
@@ -2507,8 +2512,8 @@ if (IS_HOST) {
         broadcastSound(ROL_SND[cur.r] || "");
         addChat(`<img src="${cur.img}" style="width:20px;height:28px;border-radius:3px;vertical-align:middle;margin-right:4px"/> <em>${cur.l} agit dans l'ombre...</em>`, true);
         setPhaseInfo(cur.l + " — " + cur.d);
-        // _showNightTimer: seul l'hôte démarre le vrai timer (IS_HOST géré à l'intérieur)
-        if (window._showNightTimer) window._showNightTimer(cur.l, stepStart, cur.s, cur.img);
+        // Démarrer le bandeau timer (affichage seulement pendant la transition)
+        if (window._showNightTimer) window._showNightTimer(cur.l, stepEndTs, cur.s, cur.img);
 
         // Transition + UI hôte
         showNightTransition(cur.l + " se réveille…", cur.d, () => {
@@ -2542,7 +2547,7 @@ if (IS_HOST) {
       }
 
       function showActionBar(secs) {
-        // Afficher la barre d'action — le timer est piloté par nightStepCountdown Firebase
+        // Afficher la barre d'action — synchronisée sur _nightStepEndTs
         const acb = document.getElementById("action-cbar");
         const fill = document.getElementById("action-fill");
         const timeEl = document.getElementById("action-time");
@@ -2551,28 +2556,33 @@ if (IS_HOST) {
         fill.style.width = "100%";
         fill.style.background = "#9999ff";
 
-        function _upd(rem) {
-          const m = Math.floor(rem/60), s = rem%60;
-          timeEl.textContent = m+":"+(s<10?"0":"")+s;
-          fill.style.width = Math.round((rem/secs)*100)+"%";
-          if (rem <= 8) fill.style.background = "#be6d6d";
-        }
-        _upd(secs);
+        const myActionStepId = _nightStepId;
 
-        // Suivre nightStepCountdown écrit par l'hôte (affichage uniquement)
-        let _sabUnsub = null;
-        _sabUnsub = onValue(ref(db, "salons/"+SID+"/gameState/nightStepCountdown"), (snap) => {
-          if (!snap.exists()) return;
-          const rem = snap.val();
-          _upd(Math.max(0, rem));
+        function _upd(rem) {
+          if (!acb || acb.style.display === "none") return;
+          const m = Math.floor(rem/60), s = rem%60;
+          if (timeEl) timeEl.textContent = m+":"+(s<10?"0":"")+s;
+          if (fill) fill.style.width = Math.round((rem/secs)*100)+"%";
+          if (fill && rem <= 8) fill.style.background = "#be6d6d";
+        }
+
+        // Calculer et afficher le temps restant toutes les 500ms
+        let _sabIval = setInterval(() => {
+          // Si l'étape a changé, fermer cette barre
+          if (_nightStepId !== myActionStepId) {
+            clearInterval(_sabIval); _sabIval = null;
+            if (acb) acb.style.display = "none";
+            return;
+          }
+          const rem = Math.max(0, Math.ceil((_nightStepEndTs - Date.now()) / 1000));
+          _upd(rem);
           if (rem <= 0) {
-            if (_sabUnsub) { _sabUnsub(); _sabUnsub = null; }
+            clearInterval(_sabIval); _sabIval = null;
             if (acb) acb.style.display = "none";
             if (!G.actDone) {
               addChatLocal("⏰ Temps écoulé.");
               G.actDone = true;
             }
-            // Fermer l'UI action pour tout le monde quand le countdown arrive à 0
             G.forceAction = false;
             const _wp4 = document.getElementById("wolf-private");
             if (_wp4) _wp4.style.display = "none";
@@ -2583,7 +2593,11 @@ if (IS_HOST) {
               goTab("village", null);
             }
           }
-        });
+        }, 500);
+
+        // Affichage initial
+        const initRem = Math.max(0, Math.ceil((_nightStepEndTs - Date.now()) / 1000));
+        _upd(Math.min(initRem, secs));
       }
 
       let _advNightPending = false;
@@ -3498,11 +3512,12 @@ if (IS_HOST) {
           area.innerHTML = "<p style='color:#be6d6d;font-style:italic'>💀 Vos pouvoirs ont disparu — l'Ancien a été exécuté par le village.</p>";
           clearInterval(_nightTimerInterval); _nightTimerInterval = null;
           if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
-            G._advancedThisStep = true; _advNightPending = true;
-            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-            setTimeout(() => advNight(), 300);
-          } else if (!IS_HOST && !G._nonHostActionSent) {
+              G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            } else if (!IS_HOST && !G._nonHostActionSent) {
             G._nonHostActionSent = true;
             update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id });
           }
@@ -3563,11 +3578,12 @@ if (IS_HOST) {
               '<p style="color:#555;font-style:italic">Déjà utilisé.</p>';
             clearInterval(_nightTimerInterval); _nightTimerInterval = null;
             if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
-            G._advancedThisStep = true; _advNightPending = true;
-            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-            setTimeout(() => advNight(), 300);
-          } else if (!IS_HOST && !G._nonHostActionSent) {
+              G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            } else if (!IS_HOST && !G._nonHostActionSent) {
             G._nonHostActionSent = true;
             update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id });
           }
@@ -3605,8 +3621,9 @@ if (IS_HOST) {
               area.innerHTML = `<p style="color:#555;font-style:italic">Vous êtes le seul loup restant…</p>`;
               if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
               clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
               setTimeout(() => advNight(), 300);
             }
             } else {
@@ -3632,8 +3649,9 @@ if (IS_HOST) {
             area.innerHTML = `<p style="color:#555;font-style:italic">Attendez votre prochain tour…</p>`;
             if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
               clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
               setTimeout(() => advNight(), 300);
             }
           }
@@ -3651,8 +3669,9 @@ if (IS_HOST) {
             area.innerHTML = `<p style="color:#555;font-style:italic">Pouvoir déjà utilisé ce tour.</p>`;
             if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
               clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
               setTimeout(() => advNight(), 300);
             }
           }
@@ -3679,16 +3698,18 @@ if (IS_HOST) {
             }</p>`;
             if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
               clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
               setTimeout(() => advNight(), 300);
             }
           } else {
             area.innerHTML = `<p style="color:#555;font-style:italic">Dormez paisiblement…</p>`;
             if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
               clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
               setTimeout(() => advNight(), 300);
             }
           }
@@ -3740,8 +3761,9 @@ if (IS_HOST) {
             area.innerHTML = `<p style="color:#888;font-style:italic">Vous avez charmé tous les joueurs vivants.</p>`;
             if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
               clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
               setTimeout(() => advNight(), 300);
             }
           } else {
@@ -3799,8 +3821,9 @@ if (IS_HOST) {
             area.innerHTML = `<p style="color:#555;font-style:italic">Vous avez déjà choisi votre rôle.</p>`;
             if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
               clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
               setTimeout(() => advNight(), 300);
             }
           }
@@ -3836,8 +3859,9 @@ if (IS_HOST) {
             area.innerHTML = `<p style="color:#888;font-style:italic">Votre camp est fixé.</p>`;
             if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
               G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
               clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
               setTimeout(() => advNight(), 300);
             }
           }
@@ -3923,14 +3947,16 @@ if (IS_HOST) {
           if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
             G._advancedThisStep = true;
             _advNightPending = true;
+            _nightStepEndTs = Date.now();
             clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            update(ref(db, "salons/" + SID + "/gameState"), {
+              nightStepEndTs: Date.now(), nightStepCountdown: 0
+            });
             setTimeout(() => advNight(), 300);
           } else if (!IS_HOST && !G._nonHostActionSent) {
             G._nonHostActionSent = true;
             update(ref(db, "salons/" + SID + "/gameState"), {
-              nightActionDone: Date.now(),
-              nightActionBy: ME.id
+              nightActionDone: Date.now(), nightActionBy: ME.id
             });
           }
           return;
@@ -4002,12 +4028,14 @@ if (IS_HOST) {
           });
           addJournal("Voyante Bavarde : révèle " + roleName + (isWolf ? " (Loup)" : " (Village)"));
           G.actDone = true;
-          // Signaler que l'action est terminée (même chemin que le code commun)
           if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
             G._advancedThisStep = true;
             _advNightPending = true;
+            _nightStepEndTs = Date.now();
             clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            update(ref(db, "salons/" + SID + "/gameState"), {
+              nightStepEndTs: Date.now(), nightStepCountdown: 0
+            });
             setTimeout(() => advNight(), 300);
           } else if (!IS_HOST && !G._nonHostActionSent) {
             G._nonHostActionSent = true;
@@ -4122,11 +4150,12 @@ if (IS_HOST) {
           G.actDone = true;
           renderAction();
           if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
-            G._advancedThisStep = true; _advNightPending = true;
-            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
-            setTimeout(() => advNight(), 300);
-          } else if (!IS_HOST && !G._nonHostActionSent) {
+              G._advancedThisStep = true; _advNightPending = true;
+              _nightStepEndTs = Date.now();
+              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+              update(ref(db, "salons/" + SID + "/gameState"), { nightStepEndTs: Date.now(), nightStepCountdown: 0 });
+              setTimeout(() => advNight(), 300);
+            } else if (!IS_HOST && !G._nonHostActionSent) {
             G._nonHostActionSent = true;
             update(ref(db, "salons/" + SID + "/gameState"), { nightActionDone: Date.now(), nightActionBy: ME.id });
           }
@@ -4205,18 +4234,20 @@ if (IS_HOST) {
         }
         G.actDone = true;
         renderAction();
-        // Signaler que l'action est terminée → le timer se charge de l'avancement
+        // Terminer immédiatement: écrire endTs=now pour que tous les timers s'arrêtent
         if (IS_HOST) {
           if (!G._advancedThisStep && !_advNightPending) {
-            // Forcer le countdown à 0 → le setInterval de _showNightTimer appellera advNight
             G._advancedThisStep = true;
             _advNightPending = true;
+            _nightStepEndTs = Date.now(); // forcer fin immédiate du timer local
             clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: 0 });
+            update(ref(db, "salons/" + SID + "/gameState"), {
+              nightStepEndTs: Date.now(), // tous les clients verront rem=0
+              nightStepCountdown: 0
+            });
             setTimeout(() => advNight(), 300);
           }
         } else {
-          // Non-hôte: signaler à l'hôte que l'action est faite → il avancera
           if (!G._nonHostActionSent) {
             G._nonHostActionSent = true;
             update(ref(db, "salons/" + SID + "/gameState"), {
@@ -5307,62 +5338,59 @@ if (IS_HOST) {
       }
 
       // Appelé par l'hôte dans nextNightStep() — il écrit nightStepCountdown chaque seconde
-      // UID de l'étape courante — empêche un listener de l'étape N de déclencher l'étape N+1
-      let _currentStepUid = 0;
+      // ── Système de timer nuit — basé sur timestamp de fin ──────────────
+      // nightStepEndTs = timestamp Unix (ms) quand l'étape se termine
+      // Tous les clients calculent rem = ceil((endTs - now) / 1000)
+      // L'hôte est le seul à écrire nightStepEndTs dans Firebase
 
-      window._showNightTimer = function(label, tsStart, duration, roleImg) {
-        // Invalider l'étape précédente
-        _currentStepUid++;
-        const myUid = _currentStepUid;
+      let _nightStepEndTs = 0;      // timestamp de fin de l'étape courante
+      let _nightStepDuration = 0;   // durée totale de l'étape
+      let _nightStepLabel = "";     // label pour le bandeau
+      let _nightStepImg = null;     // image pour le bandeau
+      let _nightStepId = 0;         // ID unique par étape (anti-doublon)
+
+      // Démarre le timer d'une étape nuit (appelé par nextNightStep côté hôte
+      // et par le handler onValue côté non-hôte)
+      window._showNightTimer = function(label, endTs, duration, roleImg) {
+        _nightStepId++;
+        const myId = _nightStepId;
+        _nightStepEndTs = endTs;
+        _nightStepDuration = duration;
+        _nightStepLabel = label;
+        _nightStepImg = roleImg || null;
 
         clearInterval(_nightTimerInterval);
         _nightTimerInterval = null;
         if (_nightCountdownUnsub) { _nightCountdownUnsub(); _nightCountdownUnsub = null; }
 
-        if (IS_HOST) {
-          // Calculer le temps restant depuis tsStart (résistant aux reconnexions)
-          let rem = Math.max(0, duration - Math.floor((Date.now() - tsStart) / 1000));
-          _renderNightBanner(label, rem, duration, roleImg);
+        // Afficher immédiatement le temps restant
+        const _initRem = Math.max(0, Math.ceil((endTs - Date.now()) / 1000));
+        _renderNightBanner(label, Math.min(_initRem, duration), duration, roleImg);
 
-          // Écrire immédiatement la valeur courante
-          update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: rem });
-
-          _nightTimerInterval = setInterval(() => {
-            if (_currentStepUid !== myUid) {
-              clearInterval(_nightTimerInterval); _nightTimerInterval = null; return;
+        // Tick local toutes les 500ms pour fluidité
+        _nightTimerInterval = setInterval(() => {
+          if (_nightStepId !== myId) { clearInterval(_nightTimerInterval); _nightTimerInterval = null; return; }
+          const rem = Math.max(0, Math.ceil((_nightStepEndTs - Date.now()) / 1000));
+          _renderNightBanner(label, Math.min(rem, duration), duration, roleImg);
+          if (rem <= 0) {
+            clearInterval(_nightTimerInterval); _nightTimerInterval = null;
+            // Seul l'hôte déclenche advNight au timeout
+            if (IS_HOST && !G._advancedThisStep && !_advNightPending) {
+              G._advancedThisStep = true;
+              _advNightPending = true;
+              setTimeout(() => advNight(), 200);
             }
-            rem = Math.max(0, duration - Math.floor((Date.now() - tsStart) / 1000));
-            update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: rem });
-            _renderNightBanner(label, rem, duration, roleImg);
-            if (rem <= 0) {
-              clearInterval(_nightTimerInterval); _nightTimerInterval = null;
-              if (!G._advancedThisStep && !_advNightPending) {
-                G._advancedThisStep = true;
-                _advNightPending = true;
-                setTimeout(() => advNight(), 300);
-              }
-            }
-          }, 1000);
-        } else {
-          // Non-hôte : afficher duration immédiatement, puis écouter Firebase
-          _renderNightBanner(label, duration, duration, roleImg);
-          const _cdRef2 = ref(db, "salons/" + SID + "/gameState/nightStepCountdown");
-          _nightCountdownUnsub = onValue(_cdRef2, (snap) => {
-            if (_currentStepUid !== myUid) {
-              if (_nightCountdownUnsub) { _nightCountdownUnsub(); _nightCountdownUnsub = null; }
-              return;
-            }
-            if (!snap.exists() || snap.val() === null) return;
-            const rem = Math.max(0, snap.val());
-            _renderNightBanner(label, rem, duration, roleImg);
-          });
-        }
+          }
+        }, 500);
       };
 
       window._hideNightTimer = function() {
-        clearInterval(_nightTimerInterval);
+        _nightStepId++; // invalider l'étape courante
+        clearInterval(_nightTimerInterval); _nightTimerInterval = null;
         if (_nightCountdownUnsub) { _nightCountdownUnsub(); _nightCountdownUnsub = null; }
-        update(ref(db, "salons/" + SID + "/gameState"), { nightStepCountdown: null });
+        // Écrire endTs dans le passé pour forcer rem=0 chez tous les clients
+        _nightStepEndTs = Date.now() - 1000;
+        // NE PAS écrire null dans Firebase — ça casse les listeners non-hôtes
         const banner = document.getElementById("phase-banner");
         if (banner) {
           banner.className = "phase-banner phase-night";
