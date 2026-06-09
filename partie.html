@@ -390,7 +390,8 @@ window.goTab=function(id,btn){["vote","action","info"].forEach(t=>{const e=docum
 window.closeActionOverlay=function(){if(G&&G.forceAction&&G.myRole!=="wolf")return;goTab("village",null);};
 window.tryOpenVote=function(btn){if(!isAlive(ME.id)){showNotif("❌ Les morts ne votent pas !");return;}if(!G.voteStarted){showNotif("⏳ Pas encore l'heure du vote !");return;}clearVoteBadge();goTab("vote",btn);};
 function addJournal(txt){G.journal.push(txt);const el=document.getElementById("journal");if(el)el.innerHTML=G.journal.map((l,i)=>`<span style="color:var(--accent)">${i+1}.</span> ${l}`).join("<br>");}
-function updateUI(){const alive=G.players.filter(p=>isAlive(p.id)).length;document.getElementById("g-alive").textContent=alive;document.getElementById("g-turn").textContent=G.turn;const b=document.getElementById("phase-banner");if(G.phase==="night"){b.className="phase-banner phase-night";b.textContent="🌙 Nuit "+G.turn;}else{b.className="phase-banner phase-day";b.textContent="☀️ Jour "+G.turn;}}
+function updateUI(){const alive=G.players.filter(p=>isAlive(p.id)).length;document.getElementById("g-alive").textContent=alive;document.getElementById("g-turn").textContent=G.turn;const b=document.getElementById("phase-banner");if(G.phase==="night"){b.className="phase-banner phase-night";// Ne pas écraser le timer si déjà une étape en cours
+if(!b.querySelector("div"))b.textContent="🌙 Nuit "+G.turn;}else{b.className="phase-banner phase-day";b.textContent="☀️ Jour "+G.turn;}}
 function setPageBg(phase){const sc=document.getElementById("sc-game");if(!sc)return;if(phase==="day"){sc.style.backgroundImage=`url('${DAY_IMG}')`;sc.style.backgroundSize="cover";sc.style.backgroundPosition="center";}else sc.style.backgroundImage="none";applyTheme(phase);}
 function applyTheme(phase){let el=document.getElementById("dyn-theme");if(!el){el=document.createElement("style");el.id="dyn-theme";document.head.appendChild(el);}if(phase==="day"){el.textContent=[`#game-header{background:rgba(40,25,5,.25)!important}`,`.chat-box{background:rgba(30,18,4,.32)!important}`,`#msg-inp{background:rgba(30,18,4,.4)!important;color:#fff8e8!important}`,`.side-panel{background:rgba(90,60,15,.72)!important}`].join("\n");}else{el.textContent=[`#game-header{background:rgba(6,8,18,.45)!important}`,`.side-panel{background:rgba(15,20,50,.72)!important}`,`.chat-box{background:rgba(6,8,18,.45)!important}`].join("\n");}}
 function renderPanels(){const PL=document.getElementById("panel-players"),PR=document.getElementById("panel-roles");const COLS=["#8b3a8b","#3a6b8b","#8b6b3a","#3a8b5a","#8b3a3a","#5a3a8b","#3a8b8b","#8b7a3a"];PL.innerHTML='<div class="side-label">Joueurs</div>'+G.players.map((p,idx)=>{const dead=!isAlive(p.id),isMe=p.id===ME.id,lover=G.lovers.includes(p.id);const col=COLS[idx%COLS.length],ini=p.name.charAt(0).toUpperCase();const inner=p.avatarUrl?`<img src="${p.avatarUrl}" style="width:100%;height:100%;object-fit:cover;display:block"/>`:`<div style="width:100%;height:100%;background:${col};display:flex;align-items:center;justify-content:center;"><span style="font-size:1.8rem;font-weight:700;color:#fff;font-family:Cinzel,serif">${ini}</span></div>`;return`<div class="mini-card ${dead?"dead":""} ${isMe?"me":""} ${lover?"lover":""}">${inner}<div class="mn">${p.name.substring(0,8)}${dead?" 💀":""}${lover?" 💘":""}</div></div>`;}).join("");const roleIds=[...new Set(G.players.map(p=>p.role))];PR.innerHTML='<div class="side-label">Rôles</div>'+roleIds.map(rid=>{const r=RDATA[rid]||RDATA.villager,pl=G.players.filter(p=>p.role===rid),allDead=pl.every(p=>!isAlive(p.id)),cnt=pl.length;return`<div class="mini-card ${allDead?"dead":""}"><img src="${r.img}" style="width:100%;height:100%;object-fit:cover;object-position:top;display:block"/><div class="mn">${r.n.substring(0,8)}${cnt>1?" x"+cnt:""}</div></div>`;}).join("");}
@@ -507,6 +508,7 @@ function runNight(){
   if(G.voteListener){G.voteListener();G.voteListener=null;}
   G.phase="night";G.hasVoted=false;G._nightRunning=false;
   G.voteStarted=false;G._resolvingVotes=false;G._lastVoteResultTs=null;G._voteResultHandled=null;
+  _lastVoteOpenTs=0; // reset pour que le prochain vote soit détecté
   G.selVote=null;G.votes={};G.isRunoff=false;G.runoffCandidates=null;
   ["main-cbar","vote-cbar"].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display="none";});
   goTab("village",null);setPageBg("night");
@@ -741,7 +743,7 @@ function startVote(){
   soundYourTurn();addChat("🗳️ <strong>Le vote commence !</strong> Choisissez un joueur à éliminer.",true);
   showVoteBadge();
   update(ref(db,"salons/"+SID+"/gameState"),{
-    phase:"vote",voteOpen:true,voteResult:null,voteCountdown:VOTE_DUR,voteStart:voteStart,
+    phase:"vote",voteOpen:true,voteResult:null,voteCountdown:VOTE_DUR,voteDuration:VOTE_DUR,voteStart:voteStart,
     alive:safeAlive(G.alive),players:G.players,turn:G.turn,runoffTs:null,runoffCandidates:null,
   });
   remove(ref(db,"salons/"+SID+"/votes"));
@@ -1119,7 +1121,7 @@ function scheduleBots(){
 function scheduleBotsNight(){
   G.players.filter(p=>p.isBot&&isAlive(p.id)&&["wolf","grandmechant","whitewolf"].includes(p.role)).forEach(p=>{
     const delay=2000+Math.random()*8000;
-    setTimeout(()=>{if(G.phase!=="night"||!isAlive(p.id))return;const msg=BOT_MSG_WOLF[Math.floor(Math.random()*BOT_MSG_WOLF.length)];push(ref(db,"salons/"+SID+"/gameChat/"+Date.now()+"_x"),{text:msg,sys:false,wolf:true,uid:"bot_"+p.name,author:p.name,isBot:true,t:Date.now()});},delay);
+    setTimeout(()=>{if(G.phase!=="night"||!isAlive(p.id))return;const msg=BOT_MSG_WOLF[Math.floor(Math.random()*BOT_MSG_WOLF.length)];push(ref(db,"salons/"+SID+"/gameChat/"+Date.now()+"_w"+Math.random().toString(36).slice(2,6)),{text:msg,sys:false,wolf:true,uid:"bot_"+p.name,author:p.name,isBot:true,t:Date.now()});},delay);
   });
 }
 function scheduleBotsVote(){
@@ -1143,6 +1145,29 @@ window.sendHostMessage=function(){const inp=document.getElementById("host-msg-in
 window.hostForceVote=function(){if(!IS_HOST)return;if(!G.voteStarted){clearInterval(G.ivals.main);startVote();}};
 window.hostKickPlayer=function(){const sel=document.getElementById("host-kick-select")?.value;if(!sel)return;kill(sel);addChat(`🚫 Un joueur a été exclu par l'hôte.`,true);};
 window.hostEndGame=function(){if(!IS_HOST)return;if(confirm("Terminer la partie ?"))endGame("village");};
+
+
+// ── Timer jour non-hôte ────────────────────────────────────────────
+function _startNonHostDayTimer(gs){
+  if(IS_HOST)return;
+  if(G._dayCountdownUnsub){G._dayCountdownUnsub();G._dayCountdownUnsub=null;}
+  const dayDur=gs.phaseDuration||G.dayDuration||180;
+  const mcEl=document.getElementById("main-cbar");
+  const dct=document.getElementById("cbar-time");
+  const dcf=document.getElementById("cbar-fill");
+  const dcl=document.getElementById("cbar-label");
+  if(mcEl)mcEl.style.display="block";
+  if(dcl)dcl.textContent="☀️ Discussion";
+  if(dcf){dcf.style.background="var(--accent)";dcf.style.width="100%";}
+  G._dayCountdownUnsub=onValue(ref(db,"salons/"+SID+"/gameState/dayCountdown"),snap=>{
+    if(!snap.exists())return;
+    const rem=snap.val();
+    const mm=Math.floor(rem/60),ss=rem%60;
+    if(dct)dct.textContent=mm+":"+(ss<10?"0":"")+ss;
+    if(dcf){dcf.style.width=Math.max(0,Math.round((rem/dayDur)*100))+"%";dcf.style.background=rem<=15?"#be6d6d":"var(--accent)";}
+    if(rem<=0){if(G._dayCountdownUnsub){G._dayCountdownUnsub();G._dayCountdownUnsub=null;}if(mcEl)mcEl.style.display="none";}
+  });
+}
 
 // ══════════════════════════════════════════════════════════════════
 //  HANDLER PRINCIPAL onValue gameState
@@ -1178,6 +1203,10 @@ function _handleGameState(gs){
     if(gs.deadThisTurn&&gs.deadThisTurn.length>0){
       showNightBilan(gs.deadThisTurn,()=>{});
     }
+    // Démarrer écoute dayCountdown pour la barre de progression
+    _startNonHostDayTimer(gs);
+    // Transition visuelle
+    showDayTransition("☀️ Jour "+G.turn,"Le village se réveille. Qui est le loup parmi vous ?",null);
   }
 
   // ── Phase day : mise à jour UI ────────────────────────────────
@@ -1197,7 +1226,7 @@ function _handleGameState(gs){
       _lastVoteOpenTs=voteTs;
       G.voteStarted=true;G.isRunoff=false;G.runoffCandidates=null;
       G.hasVoted=false;G.selVote=null;G.votes={};
-      const VDUR=gs.phaseDuration||60;
+      const VDUR=gs.voteDuration||gs.phaseDuration||G.voteDuration||60;
       const rem=gs.voteCountdown||VDUR;
       showVoteBadge();
       _openVoteUI(VDUR,rem);
@@ -1297,7 +1326,9 @@ function _initGame(){
     // Écoute chat
     onValue(ref(db,"salons/"+SID+"/gameChat"),snap2=>{
       if(!snap2.exists())return;
-      const msgs=Object.values(snap2.val()).sort((a,b)=>(a.t||0)-(b.t||0));
+      // Aplatir et filtrer: s'assurer que chaque msg a bien text et t
+      const rawVals=Object.values(snap2.val());
+      const msgs=rawVals.filter(m=>m&&typeof m==="object"&&(m.text||m.sys)).sort((a,b)=>(a.t||0)-(b.t||0));
       const box=document.getElementById("game-chat");if(!box)return;
       if(msgs.length>G.chatCount){
         msgs.slice(G.chatCount).forEach(m=>{
@@ -1307,7 +1338,9 @@ function _initGame(){
           if(isDead&&alive)return; // vivants ne voient pas le chat des morts
           d.className="msg"+(m.sys?" sys":"")+(m.wolf?" wolf-msg":"")+(isDead?" dead-msg":"");
           const time=new Date(m.t||Date.now()).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
-          d.innerHTML=m.sys?m.text:`${isDead?'<span class="ghost-tag">👻</span>':""}<span class="who">${m.author}</span>: ${m.text} <span class="msg-time">${time}</span>`;
+          const mtext=m.text||"";const mauthor=m.author||"?";
+          if(!mtext)return; // ignorer messages vides/malformés
+          d.innerHTML=m.sys?mtext:`${isDead?'<span class="ghost-tag">👻</span>':""}<span class="who">${mauthor}</span>: ${mtext} <span class="msg-time">${time}</span>`;
           box.appendChild(d);box.scrollTop=box.scrollHeight;
           if(!m.sys&&m.uid!==ME.id&&!document.hidden)showGameChatToast(m.author,m.text);
         });
